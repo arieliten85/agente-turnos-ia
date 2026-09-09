@@ -10,6 +10,9 @@ node_modules/
 # Estado del setup — es por instalación, no por repo
 .setup-state.json
 
+# Config local de test-eval (usar test-eval.config.example.json como base)
+scripts/test-eval.config.json
+
 # Logs
 *.log
 npm-debug.log*

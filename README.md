@@ -32,8 +32,8 @@ Skill para Claude Code que levanta un agente de turnos por WhatsApp de punta a p
 | 3 | tools.json + validación de parámetros | ✅ |
 | 4 | Prompt del agente (identity.md + rules.md; capa 3 se inyecta desde la base) | ✅ |
 | 5 | Fragments de n8n (6) + flujos completos (5) en `blueprints/` | ✅ |
-| 6 | simulator.js | ⏳ |
-| 7 | test-eval.js | ⏳ |
+| 6 | simulator.js (chat en terminal + capture server que hace de Graph API) | ✅ |
+| 7 | test-eval.js (16 casos × N corridas, tasas y p50/p95, umbrales por tipo) | ✅ |
 | 8 | setup.js + walkthroughs + SKILL.md | ⏳ |
 | 9 | update.js + promote.js + reset-demo.js | ⏳ |
 

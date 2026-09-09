@@ -1,0 +1,8 @@
+{
+  "_comentario": "Copiá este archivo a test-eval.config.json para fijar defaults sin pasar flags. Los flags de línea de comando ganan.",
+  "runs": 5,
+  "thresholds": { "critico": 90, "ambiguo": 75 },
+  "from": "5491100000001",
+  "gapMs": 400,
+  "timeoutMs": 20000
+}
