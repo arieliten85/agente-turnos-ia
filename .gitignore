@@ -1,0 +1,36 @@
+# Dependencias
+node_modules/
+.npm/
+
+# Variables de entorno y secretos — NUNCA van al repo
+.env
+.env.local
+.env.*.local
+
+# Estado del setup — es por instalación, no por repo
+.setup-state.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporales
+*.tmp
+*.temp
+
+# Supabase local (si usás el CLI)
+.supabase/
+
+# Output de tests
+/test-results/
+/coverage/

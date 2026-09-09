@@ -1,0 +1,18 @@
+{
+  "name": "crear-agente-turnos-scripts",
+  "version": "1.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Scripts del skill: test-unit, simulator, setup, promote, update, reset-demo",
+  "scripts": {
+    "test:unit": "node test-unit.js",
+    "test:unit:verbose": "node test-unit.js --verbose",
+    "test:unit:local": "node test-unit.js --backend=local"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
