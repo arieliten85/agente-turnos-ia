@@ -30,7 +30,7 @@ Skill para Claude Code que levanta un agente de turnos por WhatsApp de punta a p
 | 1 | Schema SQL + funciones + migración | ✅ |
 | 2 | test-unit.js + suite de tests (20 verdes) | ✅ |
 | 3 | tools.json + validación de parámetros | ✅ |
-| 4 | Prompt del agente (3 capas) | ⏳ |
+| 4 | Prompt del agente (identity.md + rules.md; capa 3 se inyecta desde la base) | ✅ |
 | 5 | Fragments de n8n + flujos completos | ⏳ |
 | 6 | simulator.js | ⏳ |
 | 7 | test-eval.js | ⏳ |
