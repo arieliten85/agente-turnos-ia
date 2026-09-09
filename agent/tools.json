@@ -1,0 +1,217 @@
+{
+  "$comment": "Contrato de herramientas del agente. Fuente de verdad de qué puede pedir el modelo y con qué parámetros. El fragment 'llamada-modelo' de n8n adapta este formato al esquema de Gemini (functionDeclarations) o Claude (tools/input_schema). El modelo interpreta y redacta; nunca calcula fechas, disponibilidad ni precios: para eso llama a estas herramientas. Descripciones y mensajes en español rioplatense (idioma del producto).",
+  "schema_version": "1.0",
+  "formats": {
+    "date": "AAAA-MM-DD (fecha del negocio en su zona horaria).",
+    "date-time": "ISO 8601 con offset, ej 2026-09-12T15:00:00-03:00. El modelo copia el valor exacto que devolvió consultar_disponibilidad.",
+    "e164": "Teléfono en formato E.164 sin '+', solo dígitos (ej 5491122334455). Igual que el 'from' del webhook de Meta.",
+    "uuid": "Identificador con formato UUID, tal cual lo devolvió una consulta previa."
+  },
+  "tools": [
+    {
+      "name": "consultar_servicios",
+      "description": "Lista los servicios activos del negocio con su duración y precio. Usala cuando la clienta pregunta qué se hace, cuánto sale algo o cuánto dura. Nunca inventes un servicio ni un precio: si no aparece acá, no existe.",
+      "backend": { "kind": "query", "target": "services" },
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "consultar_horarios",
+      "description": "Devuelve los días y las franjas horarias en las que atiende el negocio y cada profesional. Usala cuando preguntan '¿a qué hora abren?', '¿trabajan los sábados?' o similar. No la uses para saber si un turno puntual está libre: para eso está consultar_disponibilidad.",
+      "backend": { "kind": "query", "target": "schedule" },
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "consultar_disponibilidad",
+      "description": "Devuelve los horarios de inicio libres para un servicio en una fecha. Es la única forma válida de saber si hay lugar: nunca deduzcas disponibilidad por tu cuenta. Si la clienta no aclaró profesional, mandá 'profesional' en null y la herramienta busca cualquiera que pueda hacer el servicio.",
+      "backend": { "kind": "sql_function", "target": "get_availability" },
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fecha": {
+            "type": "string",
+            "format": "date",
+            "description": "Día a consultar, en formato AAAA-MM-DD."
+          },
+          "servicio": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Nombre del servicio tal como figura en consultar_servicios."
+          },
+          "profesional": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "description": "Nombre del profesional si la clienta pidió uno puntual. null si da igual."
+          }
+        },
+        "required": ["fecha", "servicio"]
+      }
+    },
+    {
+      "name": "crear_turno",
+      "description": "Reserva un turno. Solo llamala cuando ya tenés fecha y hora concretas confirmadas por la clienta y verificadas con consultar_disponibilidad. Nunca confirmes un turno sin haber llamado a esta herramienta. 'hora_inicio' tiene que ser exactamente uno de los valores que devolvió consultar_disponibilidad.",
+      "backend": { "kind": "sql_function", "target": "book_appointment" },
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cliente": {
+            "type": "string",
+            "format": "e164",
+            "description": "Teléfono de la clienta. Se completa desde la conversación; no se lo pidas."
+          },
+          "servicios": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 },
+            "description": "Uno o más servicios para la misma visita, por nombre. En v1 van todos con el mismo profesional."
+          },
+          "profesional": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Nombre del profesional que va a atender el turno."
+          },
+          "hora_inicio": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Inicio del turno en ISO 8601 con offset, copiado de consultar_disponibilidad."
+          }
+        },
+        "required": ["cliente", "servicios", "profesional", "hora_inicio"]
+      }
+    },
+    {
+      "name": "consultar_turnos_cliente",
+      "description": "Trae los turnos futuros de la clienta (confirmados). Usala cuando pregunta '¿qué turno tengo?', antes de reprogramar o antes de cancelar, para saber de qué turno habla.",
+      "backend": { "kind": "query", "target": "appointments" },
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cliente": {
+            "type": "string",
+            "format": "e164",
+            "description": "Teléfono de la clienta. Se completa desde la conversación; no se lo pidas."
+          }
+        },
+        "required": ["cliente"]
+      }
+    },
+    {
+      "name": "modificar_turno",
+      "description": "Reprograma un turno existente a una hora nueva. Conseguí 'turno_id' con consultar_turnos_cliente. 'nueva_hora' tiene que salir de consultar_disponibilidad. Si faltan menos horas que la política de cancelación, la herramienta devuelve error: en ese caso no reprogrames, derivá a un humano.",
+      "backend": { "kind": "composite", "target": "cancel_appointment + book_appointment" },
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "turno_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Identificador del turno a mover."
+          },
+          "nueva_hora": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Nuevo inicio en ISO 8601 con offset, copiado de consultar_disponibilidad."
+          }
+        },
+        "required": ["turno_id", "nueva_hora"]
+      }
+    },
+    {
+      "name": "cancelar_turno",
+      "description": "Cancela un turno confirmado. Conseguí 'turno_id' con consultar_turnos_cliente. Si la política impide cancelar solo (faltan pocas horas), la herramienta devuelve error y hay que derivar a un humano.",
+      "backend": { "kind": "sql_function", "target": "cancel_appointment" },
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "turno_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Identificador del turno a cancelar."
+          }
+        },
+        "required": ["turno_id"]
+      }
+    },
+    {
+      "name": "sumar_lista_espera",
+      "description": "Anota a la clienta en la lista de espera para un servicio dentro de un rango de fechas. Usala cuando no hay disponibilidad y la clienta quiere que le avisen si se libera algo. Cuando se cancele un turno que encaje, el sistema le escribe.",
+      "backend": { "kind": "query", "target": "waitlist" },
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cliente": {
+            "type": "string",
+            "format": "e164",
+            "description": "Teléfono de la clienta. Se completa desde la conversación; no se lo pidas."
+          },
+          "servicio": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Nombre del servicio que quiere, tal como figura en consultar_servicios."
+          },
+          "fecha_desde": {
+            "type": "string",
+            "format": "date",
+            "description": "Primer día aceptable, en formato AAAA-MM-DD."
+          },
+          "fecha_hasta": {
+            "type": "string",
+            "format": "date",
+            "description": "Último día aceptable, en formato AAAA-MM-DD. Igual o posterior a fecha_desde."
+          },
+          "profesional": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "description": "Nombre del profesional preferido, o null si le da igual."
+          }
+        },
+        "required": ["cliente", "servicio", "fecha_desde", "fecha_hasta"]
+      }
+    },
+    {
+      "name": "derivar_a_humano",
+      "description": "Pasa la conversación a una persona del negocio y pausa el bot. Usala cuando la clienta pide hablar con alguien, ante un reclamo, tras dos incomprensiones seguidas, ante un pedido fuera de alcance que no podés reencauzar, o ante una cancelación tardía que no podés resolver sola.",
+      "backend": { "kind": "workflow", "target": "flow-handoff" },
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "razon": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Explicación breve de por qué se deriva, para el contexto que recibe la persona."
+          },
+          "categoria": {
+            "type": "string",
+            "enum": [
+              "pide_humano",
+              "doble_incomprension",
+              "reclamo",
+              "fuera_de_alcance",
+              "cancelacion_tardia"
+            ],
+            "description": "Disparador que motivó la derivación."
+          }
+        },
+        "required": ["razon", "categoria"]
+      }
+    }
+  ]
+}

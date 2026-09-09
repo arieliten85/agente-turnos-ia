@@ -179,7 +179,7 @@ RETURNS date
 LANGUAGE sql
 STABLE
 AS $$
-  SELECT CURRENT_DATE + (((p_target_dow - EXTRACT(DOW FROM CURRENT_DATE)::int + 7) % 7 + 7))::int;
+  SELECT CURRENT_DATE + (((p_target_dow - EXTRACT(DOW FROM CURRENT_DATE)::int + 6) % 7 + 1))::int;
 $$;
 
 

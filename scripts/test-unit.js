@@ -3,8 +3,12 @@
  * test-unit.js — Runner de tests unitarios determinísticos.
  *
  * Levanta un Postgres efímero (Docker por defecto, local como fallback),
- * aplica el schema y los helpers, corre cada archivo *.test.sql de
- * tests/unit/ en su propia transacción, reporta y baja el ambiente.
+ * aplica el schema y los helpers, corre cada test de tests/unit/, reporta y
+ * baja el ambiente. Dos tipos de test conviven en el mismo runner:
+ *   - *.test.sql  — corre en su propia transacción contra la base efímera.
+ *   - *.test.mjs  — módulo ES que exporta `default` (función, puede ser async).
+ *                   Falla si lanza. No usa la base: valida lógica de JS pura
+ *                   (p. ej. validación de parámetros de tools, dedup, etc).
  *
  * Uso:
  *   node test-unit.js                    # Docker (recomendado)
@@ -21,7 +25,7 @@
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { execSync, spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import pg from 'pg';
 
@@ -194,6 +198,12 @@ async function bootstrap(connectionString) {
 
 // ---- Correr un test ------------------------------------------------------
 async function runOneTest(connectionString, filePath) {
+  return filePath.endsWith('.test.mjs')
+    ? runJsTest(filePath)
+    : runSqlTest(connectionString, filePath);
+}
+
+async function runSqlTest(connectionString, filePath) {
   const sql = readFileSync(filePath, 'utf-8');
   const client = new Client({ connectionString });
   const started = Date.now();
@@ -215,13 +225,32 @@ async function runOneTest(connectionString, filePath) {
   }
 }
 
+async function runJsTest(filePath) {
+  const started = Date.now();
+  try {
+    const mod = await import(pathToFileURL(filePath).href);
+    if (typeof mod.default !== 'function') {
+      throw new Error(`el módulo no exporta una función por default`);
+    }
+    await mod.default();
+    return { status: 'pass', durationMs: Date.now() - started };
+  } catch (err) {
+    return {
+      status: 'fail',
+      durationMs: Date.now() - started,
+      error: err.message,
+      where: args.verbose ? err.stack : null,
+    };
+  }
+}
+
 // ---- Descubrir tests -----------------------------------------------------
 function discoverTests() {
   if (!existsSync(TESTS_DIR)) {
     return [];
   }
   return readdirSync(TESTS_DIR)
-    .filter(f => f.endsWith('.test.sql'))
+    .filter(f => f.endsWith('.test.sql') || f.endsWith('.test.mjs'))
     .filter(f => !args.filter || f.includes(args.filter))
     .sort()
     .map(f => join(TESTS_DIR, f));
@@ -300,7 +329,7 @@ async function main() {
   const totalStart = Date.now();
 
   for (const testPath of tests) {
-    const name = testPath.split('/').pop().replace('.test.sql', '');
+    const name = testPath.split('/').pop().replace(/\.test\.(sql|mjs)$/, '');
     const result = await runOneTest(env.connectionString, testPath);
     results.push({ name, ...result });
     reportResult(name, result);
