@@ -3,7 +3,7 @@
   "meta": {
     "descripcion": "Dos modos. mode='open' (lo llama flow-agent): pausa la conversación, reenvía el contexto al WhatsApp del dueño (mensaje libre si está dentro de la ventana de 24 h, plantilla de re-engagement si no) y guarda a quién responderle. mode='relay' (lo llama flow-webhook cuando el dueño responde): manda la respuesta del dueño a la clienta y reactiva la conversación.",
     "fragments": ["check-ventana-24h", "envio-whatsapp"],
-    "placeholders": ["__CRED_POSTGRES__", "__CRED_REDIS__", "__CRED_WHATSAPP__", "__WA_GRAPH_VERSION__", "__WA_PHONE_NUMBER_ID__", "__WA_TEMPLATE_REENGAGEMENT__", "__WA_TEMPLATE_LANG__", "__REDIS_PREFIX__"],
+    "placeholders": ["__CRED_POSTGRES__", "__CRED_REDIS__", "__CRED_WHATSAPP__", "__WA_API_BASE__", "__WA_GRAPH_VERSION__", "__WA_PHONE_NUMBER_ID__", "__WA_TEMPLATE_REENGAGEMENT__", "__WA_TEMPLATE_LANG__", "__REDIS_PREFIX__"],
     "notas": "El mapeo dueño→clienta se guarda en __REDIS_PREFIX__:handoff:last (TTL 3 h). Límite conocido: si hay dos handoffs abiertos a la vez, la respuesta del dueño va al último. Suficiente para volumen de salón; si crece, se mapea por quoted message id."
   },
   "active": false,
@@ -125,7 +125,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://graph.facebook.com/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
+        "url": "=__WA_API_BASE__/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "httpHeaderAuth",
         "sendBody": true,
@@ -209,7 +209,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://graph.facebook.com/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
+        "url": "=__WA_API_BASE__/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "httpHeaderAuth",
         "sendBody": true,

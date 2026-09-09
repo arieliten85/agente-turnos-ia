@@ -3,7 +3,7 @@
   "meta": {
     "descripcion": "Cron horario. Busca turnos confirmados dentro de la ventana de recordatorio del negocio que todavía no fueron notificados, manda la plantilla con botones Confirmar / Reprogramar / Cancelar y registra el envío en reminders_sent. Salta a los clientes con opt-out.",
     "fragments": ["envio-whatsapp"],
-    "placeholders": ["__CRED_POSTGRES__", "__CRED_WHATSAPP__", "__WA_GRAPH_VERSION__", "__WA_PHONE_NUMBER_ID__", "__WA_TEMPLATE_REMINDER__", "__WA_TEMPLATE_LANG__", "__REMINDER_TYPE__"],
+    "placeholders": ["__CRED_POSTGRES__", "__CRED_WHATSAPP__", "__WA_API_BASE__", "__WA_GRAPH_VERSION__", "__WA_PHONE_NUMBER_ID__", "__WA_TEMPLATE_REMINDER__", "__WA_TEMPLATE_LANG__", "__REMINDER_TYPE__"],
     "notas": "La plantilla __WA_TEMPLATE_REMINDER__ tiene 3 parámetros de body (nombre, cuándo, profesional) y 3 botones quick_reply. Los payloads llevan el appointment_id para que flow-webhook/flow-agent sepan de qué turno se habla."
   },
   "active": false,
@@ -47,7 +47,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://graph.facebook.com/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
+        "url": "=__WA_API_BASE__/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "httpHeaderAuth",
         "sendBody": true,

@@ -22,6 +22,7 @@ texto sobre el JSON). Todos con la forma `__NOMBRE__`.
 | `__CRED_MODEL__` | Credencial HTTP Header Auth con la API key del modelo | — |
 | `__WEBHOOK_PATH__` | Segmento de path del webhook (aleatorio por instalación) | — |
 | `__WA_VERIFY_TOKEN__` | Token de verificación del webhook de Meta | — |
+| `__WA_API_BASE__` | Base de la API de envío. En prod la Graph API; en dev, la URL del capture server de `simulator.js` (ej `http://host.docker.internal:3999`) | `https://graph.facebook.com` |
 | `__WA_GRAPH_VERSION__` | Versión de la Graph API | `v21.0` |
 | `__WA_PHONE_NUMBER_ID__` | Phone Number ID de Meta | — |
 | `__WA_TEMPLATE_LANG__` | Locale de las plantillas aprobadas | `es_AR` |

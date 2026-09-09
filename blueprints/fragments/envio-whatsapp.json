@@ -5,14 +5,14 @@
     "descripcion": "Manda un mensaje por la Cloud API de Meta y registra la salida en conversations. El caller arma $json.waPayload (texto, plantilla o interactivo) segun lo que necesite.",
     "entrada": "$json.waPayload (objeto del body de /messages), $json.conversationId (opcional, para registrar last_outbound_at).",
     "salida": "$json = respuesta de Meta (incluye messages[0].id = wamid saliente).",
-    "placeholders": ["__WA_GRAPH_VERSION__", "__WA_PHONE_NUMBER_ID__", "__CRED_WHATSAPP__", "__CRED_POSTGRES__"],
+    "placeholders": ["__WA_API_BASE__", "__WA_GRAPH_VERSION__", "__WA_PHONE_NUMBER_ID__", "__CRED_WHATSAPP__", "__CRED_POSTGRES__"],
     "notas": "waPayload de texto: { messaging_product:'whatsapp', to, type:'text', text:{ body } }. El nodo 'Registrar salida' es best-effort: si no hay conversationId, no hace nada."
   },
   "nodes": [
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://graph.facebook.com/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
+        "url": "=__WA_API_BASE__/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "httpHeaderAuth",
         "sendBody": true,

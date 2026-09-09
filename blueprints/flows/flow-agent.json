@@ -3,7 +3,7 @@
   "meta": {
     "descripcion": "Procesa el buffer de una conversación: toma el lock ANTES de leer nada, arma el contexto (prompt 3 capas + historial), llama al modelo con las herramientas de agent/tools.json, ejecuta a lo sumo una herramienta, cierra con una segunda pasada del modelo, manda la respuesta, registra el run y libera el lock. Fallback ante error del modelo: avisa y deriva a un humano.",
     "fragments": ["lock-conversacion", "llamada-modelo", "envio-whatsapp"],
-    "placeholders": ["__REDIS_PREFIX__", "__CRED_POSTGRES__", "__CRED_REDIS__", "__CRED_MODEL__", "__CRED_WHATSAPP__", "__WA_GRAPH_VERSION__", "__WA_PHONE_NUMBER_ID__", "__MODEL_PROVIDER__", "__MODEL_NAME__", "__AGENT_IDENTITY__", "__AGENT_RULES__", "__AGENT_TOOLS__", "__FLOW_HANDOFF_ID__"],
+    "placeholders": ["__REDIS_PREFIX__", "__CRED_POSTGRES__", "__CRED_REDIS__", "__CRED_MODEL__", "__CRED_WHATSAPP__", "__WA_API_BASE__", "__WA_GRAPH_VERSION__", "__WA_PHONE_NUMBER_ID__", "__MODEL_PROVIDER__", "__MODEL_NAME__", "__AGENT_IDENTITY__", "__AGENT_RULES__", "__AGENT_TOOLS__", "__FLOW_HANDOFF_ID__"],
     "notas": "Los nodos Postgres usan typeVersion 2.6 con options.queryReplacement como array (evita el split por coma). __AGENT_TOOLS__ lo reemplaza setup.js por el array agent/tools.json.tools. La segunda pasada del modelo narra el resultado de la herramienta en texto plano (no usa bloques tool_result nativos) para no depender del formato de cada proveedor."
   },
   "active": false,
@@ -389,7 +389,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://graph.facebook.com/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
+        "url": "=__WA_API_BASE__/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "httpHeaderAuth",
         "sendBody": true,
