@@ -38,8 +38,8 @@ texto sobre el JSON). Todos con la forma `__NOMBRE__`.
 | `__BUFFER_TTL_SECONDS__` | TTL de las claves de buffer y contador | `60` |
 | `__RECOVERY_STALE_SECONDS__` | Antigüedad para que recovery reprocese un buffer | `30` |
 | `__REMINDER_TYPE__` | Etiqueta del recordatorio en `reminders_sent` | `24h` |
-| `__AGENT_IDENTITY__` | Contenido de `agent/identity.md` (capa 1 del prompt) | — |
-| `__AGENT_RULES__` | Contenido de `agent/rules.md` (capa 2 del prompt) | — |
+| `__AGENT_IDENTITY__` | `agent/identity.md` (capa 1) inyectado como literal string JS (`JSON.stringify` del contenido) | — |
+| `__AGENT_RULES__` | `agent/rules.md` (capa 2) inyectado igual que identity | — |
 | `__FLOW_AGENT_ID__` | ID del workflow `flow-agent` ya importado en n8n | — |
 | `__FLOW_HANDOFF_ID__` | ID del workflow `flow-handoff` ya importado en n8n | — |
 
