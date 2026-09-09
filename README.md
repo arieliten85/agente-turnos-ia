@@ -23,7 +23,9 @@ Skill para Claude Code que levanta un agente de turnos por WhatsApp de punta a p
 
 ## Estado actual
 
-🚧 En construcción — siguiendo el orden de build definido en el brief.
+✅ Los 9 pasos del orden de build están completos. Falta ejercitar el flujo entero
+contra un stack de n8n real (los scripts y flujos están validados en lo estructural
+y en lo testeable sin infraestructura).
 
 | Paso | Descripción | Estado |
 |------|-------------|--------|
@@ -35,7 +37,7 @@ Skill para Claude Code que levanta un agente de turnos por WhatsApp de punta a p
 | 6 | simulator.js (chat en terminal + capture server que hace de Graph API) | ✅ |
 | 7 | test-eval.js (16 casos × N corridas, tasas y p50/p95, umbrales por tipo) | ✅ |
 | 8 | SKILL.md + walkthroughs + config/project.json + .env.template + docker-compose.yml | ✅ |
-| 9 | setup.js + update.js + promote.js + reset-demo.js | ⏳ |
+| 9 | setup.js + update.js + promote.js + reset-demo.js (+ seed-demo.sql) | ✅ |
 
 ## Uso (cuando esté listo)
 

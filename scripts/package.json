@@ -9,7 +9,11 @@
     "test:unit:verbose": "node test-unit.js --verbose",
     "test:unit:local": "node test-unit.js --backend=local",
     "sim": "node simulator.js",
-    "eval": "node test-eval.js"
+    "eval": "node test-eval.js",
+    "setup": "node setup.js",
+    "update": "node update.js",
+    "promote": "node promote.js",
+    "reset-demo": "node reset-demo.js"
   },
   "dependencies": {
     "pg": "^8.13.0"
