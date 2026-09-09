@@ -1,0 +1,617 @@
+{
+  "name": "turnos · flow-agent",
+  "meta": {
+    "descripcion": "Procesa el buffer de una conversación: toma el lock ANTES de leer nada, arma el contexto (prompt 3 capas + historial), llama al modelo con las herramientas de agent/tools.json, ejecuta a lo sumo una herramienta, cierra con una segunda pasada del modelo, manda la respuesta, registra el run y libera el lock. Fallback ante error del modelo: avisa y deriva a un humano.",
+    "fragments": ["lock-conversacion", "llamada-modelo", "envio-whatsapp"],
+    "placeholders": ["__REDIS_PREFIX__", "__CRED_POSTGRES__", "__CRED_REDIS__", "__CRED_MODEL__", "__CRED_WHATSAPP__", "__WA_GRAPH_VERSION__", "__WA_PHONE_NUMBER_ID__", "__MODEL_PROVIDER__", "__MODEL_NAME__", "__AGENT_IDENTITY__", "__AGENT_RULES__", "__AGENT_TOOLS__", "__FLOW_HANDOFF_ID__"],
+    "notas": "Los nodos Postgres usan typeVersion 2.6 con options.queryReplacement como array (evita el split por coma). __AGENT_TOOLS__ lo reemplaza setup.js por el array agent/tools.json.tools. La segunda pasada del modelo narra el resultado de la herramienta en texto plano (no usa bloques tool_result nativos) para no depender del formato de cada proveedor."
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "saveManualExecutions": true },
+  "pinData": {},
+  "tags": [],
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "26e45de4-98e4-4e9d-8aea-909967c6fed2",
+      "name": "Disparado por webhook/recovery",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-400, 0]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "lockActual",
+        "key": "=__REDIS_PREFIX__:lock:{{ $json.waId }}",
+        "keyType": "string",
+        "options": {}
+      },
+      "id": "2036b75c-4d21-4a83-8b73-d91cc1cde495",
+      "name": "Lock · Consultar",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [-180, 0],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "008781d2-0056-4be1-9340-c94e0f9dbf3f",
+              "leftValue": "={{ $json.lockActual }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notExists", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4e2a20d2-7063-4e06-af06-aac4b1650390",
+      "name": "Lock · ¿Libre?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [40, 0]
+    },
+    {
+      "parameters": {},
+      "id": "743d9cdc-1213-4645-a4a6-151e3c52bbde",
+      "name": "Lock · Ocupado (fin)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [260, 160]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=__REDIS_PREFIX__:lock:{{ $('Disparado por webhook/recovery').item.json.waId }}",
+        "value": "={{ $execution.id }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 120,
+        "valueIsJSON": false,
+        "options": {}
+      },
+      "id": "11572804-37ac-4b93-a33a-fdb7243fb509",
+      "name": "Lock · Tomar",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [260, -80],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "bufferRaw",
+        "key": "=__REDIS_PREFIX__:buffer:{{ $('Disparado por webhook/recovery').item.json.waId }}",
+        "keyType": "string",
+        "options": {}
+      },
+      "id": "1b58392f-1ad4-47c1-bb98-be534e2373c6",
+      "name": "Leer buffer",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [480, -80],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "89c5a246-795d-4f8e-91d4-4c91c0db5309",
+              "leftValue": "={{ $json.bufferRaw }}",
+              "rightValue": "[]",
+              "operator": { "type": "string", "operation": "notEquals" }
+            },
+            {
+              "id": "96a9915a-b68f-4062-b9bf-ab685a92c384",
+              "leftValue": "={{ $json.bufferRaw }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "exists", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d4ed0a68-cfb3-48d4-85b3-daa511b9a6bf",
+      "name": "¿Hay mensajes?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [700, -80]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH cli AS (\n  INSERT INTO clients (phone) VALUES ($1)\n  ON CONFLICT (phone) DO UPDATE SET updated_at = now()\n  RETURNING id, phone, name, opted_out, consent_shown_at\n),\nconv AS (\n  INSERT INTO conversations (client_id, phone)\n  SELECT id, phone FROM cli\n  ON CONFLICT (client_id) DO UPDATE SET last_message_at = now()\n  RETURNING id, state, summary\n),\nhist AS (\n  SELECT json_agg(x ORDER BY x.created_at) AS items FROM (\n    SELECT m.direction, m.content, m.created_at\n    FROM messages m JOIN conv ON conv.id = m.conversation_id\n    ORDER BY m.created_at DESC LIMIT 12\n  ) x\n),\nbiz AS (SELECT to_jsonb(b) AS b FROM business b LIMIT 1),\nsvc AS (\n  SELECT json_agg(json_build_object('nombre', s.name, 'duracion_min', s.duration_minutes, 'precio', s.price) ORDER BY s.name) AS items\n  FROM services s WHERE s.active\n),\npro AS (\n  SELECT json_agg(json_build_object(\n    'nombre', p.name,\n    'servicios', (SELECT json_agg(s2.name) FROM professional_services ps JOIN services s2 ON s2.id = ps.service_id WHERE ps.professional_id = p.id)\n  ) ORDER BY p.name) AS items\n  FROM professionals p WHERE p.active\n)\nSELECT\n  (SELECT id FROM cli) AS client_id,\n  (SELECT phone FROM cli) AS phone,\n  (SELECT name FROM cli) AS client_name,\n  (SELECT opted_out FROM cli) AS opted_out,\n  (SELECT consent_shown_at FROM cli) AS consent_shown_at,\n  (SELECT id FROM conv) AS conversation_id,\n  (SELECT state FROM conv) AS conversation_state,\n  (SELECT summary FROM conv) AS conversation_summary,\n  (SELECT items FROM hist) AS history,\n  (SELECT b FROM biz) AS business,\n  (SELECT items FROM svc) AS services,\n  (SELECT items FROM pro) AS professionals;",
+        "options": { "queryReplacement": "={{ [$('Disparado por webhook/recovery').item.json.waId] }}" }
+      },
+      "id": "b4a765f0-4db6-4978-842f-e0c5fb8c4625",
+      "name": "Cargar contexto",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [920, -80],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "38fd6350-9d3d-43df-9501-84f36b77dae5",
+              "leftValue": "={{ $json.conversation_state }}",
+              "rightValue": "paused_by_human",
+              "operator": { "type": "string", "operation": "notEquals" }
+            },
+            {
+              "id": "a6356876-50d3-4f5a-845a-0c96b199592e",
+              "leftValue": "={{ $json.conversation_state }}",
+              "rightValue": "paused_by_complaint",
+              "operator": { "type": "string", "operation": "notEquals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bb310e84-d802-42ed-ae15-977e4bb1bc68",
+      "name": "¿Conversación activa?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1140, -80]
+    },
+    {
+      "parameters": {},
+      "id": "9c294e7e-755d-40b3-8d75-1835068351aa",
+      "name": "Pausada · liberar y salir",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1360, 120]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $json;\nconst waId = $('Disparado por webhook/recovery').item.json.waId;\nlet buffer = [];\ntry { buffer = JSON.parse($('Leer buffer').item.json.bufferRaw || '[]'); } catch (e) {}\n\nconst identity = `__AGENT_IDENTITY__`;\nconst rules = `__AGENT_RULES__`;\nconst tools = __AGENT_TOOLS__;\n\nconst capa3 = [\n  '## Datos del negocio (capa 3)',\n  'Negocio: ' + JSON.stringify(ctx.business || {}),\n  'Servicios: ' + JSON.stringify(ctx.services || []),\n  'Profesionales: ' + JSON.stringify(ctx.professionals || []),\n  'Telefono de la clienta (para las herramientas): ' + waId,\n  'Consentimiento ya mostrado: ' + (ctx.consent_shown_at ? 'si' : 'no'),\n  ctx.conversation_summary ? ('Resumen de la conversacion: ' + ctx.conversation_summary) : ''\n].filter(Boolean).join('\\n');\n\nconst system = identity + '\\n\\n' + rules + '\\n\\n' + capa3;\n\nconst history = Array.isArray(ctx.history) ? ctx.history : [];\nconst messages = history.map(h => ({\n  role: h.direction === 'outbound' ? 'assistant' : 'user',\n  content: h.content || ''\n}));\nmessages.push({ role: 'user', content: buffer.map(m => m.text).filter(Boolean).join('\\n') || '(mensaje sin texto)' });\n\nreturn [{ json: { system, messages, tools, ctx, waId, buffer } }];"
+      },
+      "id": "8cf84895-5346-4fd7-bddc-981db2d9e67c",
+      "name": "Construir contexto modelo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1360, -80]
+    },
+    {
+      "parameters": {
+        "jsCode": "const provider = '__MODEL_PROVIDER__';\nconst model = '__MODEL_NAME__';\nconst src = $input.first().json;\nconst system = src.system || '';\nconst messages = Array.isArray(src.messages) ? src.messages : [];\nconst tools = Array.isArray(src.tools) ? src.tools : [];\n\nfunction sanearParaGemini(schema) {\n  const s = JSON.parse(JSON.stringify(schema || {}));\n  const walk = (o) => {\n    if (!o || typeof o !== 'object') return;\n    delete o.additionalProperties; delete o.$comment; delete o.minLength; delete o.minItems;\n    if (o.format === 'e164' || o.format === 'uuid') delete o.format;\n    if (o.properties) Object.values(o.properties).forEach(walk);\n    if (o.items) walk(o.items);\n  };\n  walk(s); return s;\n}\n\nlet url, method = 'POST', headers = {}, body = {};\nif (provider === 'claude') {\n  url = 'https://api.anthropic.com/v1/messages';\n  headers = { 'anthropic-version': '2023-06-01' };\n  body = { model, max_tokens: 1024, temperature: 0.3, system,\n    messages: messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),\n    tools: tools.map(t => ({ name: t.name, description: t.description, input_schema: t.parameters })) };\n} else {\n  url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;\n  body = { system_instruction: { parts: [{ text: system }] },\n    contents: messages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: String(m.content) }] })),\n    tools: [{ function_declarations: tools.map(t => ({ name: t.name, description: t.description, parameters: sanearParaGemini(t.parameters) })) }],\n    generationConfig: { temperature: 0.3 } };\n}\nreturn [{ json: { url, method, headers, body, provider, model, _ctx: src.ctx, _waId: src.waId, _buffer: src.buffer, _system: system, _tools: tools, _messages: messages } }];"
+      },
+      "id": "10d30e62-76d2-461d-bd8c-6dddb3481c00",
+      "name": "Modelo · Construir request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1580, -80]
+    },
+    {
+      "parameters": {
+        "method": "={{ $json.method }}",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "={{ JSON.stringify($json.headers) }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "2a9ac329-83d2-4013-b213-830a777077ed",
+      "name": "Modelo · Llamar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1800, -80],
+      "credentials": { "httpHeaderAuth": { "id": "__CRED_MODEL__", "name": "__CRED_MODEL__" } },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const provider = '__MODEL_PROVIDER__';\nconst resp = $input.first().json;\nlet text = ''; const toolCalls = []; let usage = { in: 0, out: 0 };\nif (provider === 'claude') {\n  for (const b of (resp.content || [])) {\n    if (b.type === 'text') text += b.text;\n    if (b.type === 'tool_use') toolCalls.push({ id: b.id, name: b.name, args: b.input || {} });\n  }\n  usage = { in: resp.usage?.input_tokens || 0, out: resp.usage?.output_tokens || 0 };\n} else {\n  for (const p of (resp.candidates?.[0]?.content?.parts || [])) {\n    if (p.text) text += p.text;\n    if (p.functionCall) toolCalls.push({ id: null, name: p.functionCall.name, args: p.functionCall.args || {} });\n  }\n  usage = { in: resp.usageMetadata?.promptTokenCount || 0, out: resp.usageMetadata?.candidatesTokenCount || 0 };\n}\nconst prev = $('Modelo · Construir request').item.json;\nreturn [{ json: { text: text.trim(), toolCalls, usage, provider, model: '__MODEL_NAME__',\n  _ctx: prev._ctx, _waId: prev._waId, _buffer: prev._buffer, _system: prev._system, _tools: prev._tools, _messages: prev._messages } }];"
+      },
+      "id": "ed02461d-91eb-445b-b541-06ba01133156",
+      "name": "Modelo · Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2020, -80]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "d8942dc4-bdd6-4cbd-9115-a25bfac1cd97",
+              "leftValue": "={{ $json.toolCalls.length }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "aaff36b8-a1d9-4db3-9f41-bbb6c041d266",
+      "name": "¿Pidió herramienta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2240, -80]
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = $json;\nconst tc = norm.toolCalls[0];\nconst a = tc.args || {};\nconst waId = norm._waId;\nlet query = '', params = [];\nswitch (tc.name) {\n  case 'consultar_servicios':\n    query = \"SELECT json_agg(json_build_object('nombre',name,'precio',price,'duracion_min',duration_minutes) ORDER BY name) AS data FROM services WHERE active\";\n    break;\n  case 'consultar_horarios':\n    query = \"SELECT json_agg(json_build_object('profesional',p.name,'dia_semana',sc.day_of_week,'desde',sc.time_from::text,'hasta',sc.time_to::text) ORDER BY p.name, sc.day_of_week) AS data FROM schedule sc JOIN professionals p ON p.id=sc.professional_id WHERE p.active\";\n    break;\n  case 'consultar_disponibilidad':\n    query = \"SELECT json_agg(json_build_object('profesional',professional_name,'inicio',slot_start,'fin',slot_end) ORDER BY slot_start) AS data FROM get_availability($1::date, (SELECT id FROM services WHERE lower(name)=lower($2) AND active LIMIT 1), (SELECT id FROM professionals WHERE lower(name)=lower(NULLIF($3,'')) AND active LIMIT 1))\";\n    params = [a.fecha || '', a.servicio || '', a.profesional || ''];\n    break;\n  case 'consultar_turnos_cliente':\n    query = \"SELECT json_agg(json_build_object('turno_id',ap.id,'inicio',ap.starts_at,'profesional',p.name) ORDER BY ap.starts_at) AS data FROM appointments ap JOIN clients c ON c.id=ap.client_id JOIN professionals p ON p.id=ap.professional_id WHERE c.phone=$1 AND ap.status='confirmed' AND ap.starts_at > now()\";\n    params = [waId];\n    break;\n  case 'crear_turno':\n    query = \"SELECT book_appointment((SELECT id FROM clients WHERE phone=$1), (SELECT id FROM professionals WHERE lower(name)=lower($2) AND active LIMIT 1), (SELECT array_agg(id) FROM services WHERE name = ANY(array_remove(ARRAY[NULLIF($3,''),NULLIF($4,''),NULLIF($5,'')], NULL)) AND active), $6::timestamptz) AS data\";\n    params = [waId, a.profesional || '', (a.servicios||[])[0] || '', (a.servicios||[])[1] || '', (a.servicios||[])[2] || '', a.hora_inicio || ''];\n    break;\n  case 'cancelar_turno':\n    query = \"WITH chk AS (SELECT allowed, reason FROM can_cancel($1)), done AS (SELECT cancel_appointment($1,false) WHERE (SELECT allowed FROM chk)) SELECT CASE WHEN (SELECT allowed FROM chk) THEN (SELECT 'cancelado'::text FROM done) ELSE (SELECT reason FROM chk) END AS data\";\n    params = [a.turno_id || ''];\n    break;\n  case 'modificar_turno':\n    query = \"WITH chk AS (SELECT allowed, reason FROM can_cancel($1)), old AS (SELECT client_id, professional_id, (SELECT array_agg(service_id) FROM appointment_services WHERE appointment_id=$1) AS svc FROM appointments WHERE id=$1), done AS (SELECT cancel_appointment($1,false) WHERE (SELECT allowed FROM chk)), rebook AS (SELECT book_appointment(old.client_id, old.professional_id, old.svc, $2::timestamptz) AS new_id FROM old, done WHERE (SELECT allowed FROM chk)) SELECT CASE WHEN (SELECT allowed FROM chk) THEN json_build_object('turno_id',(SELECT new_id FROM rebook),'estado','reprogramado')::text ELSE (SELECT reason FROM chk) END AS data\";\n    params = [a.turno_id || '', a.nueva_hora || ''];\n    break;\n  case 'sumar_lista_espera':\n    query = \"INSERT INTO waitlist (client_id, service_id, professional_id, date_from, date_to) SELECT (SELECT id FROM clients WHERE phone=$1), (SELECT id FROM services WHERE lower(name)=lower($2) AND active LIMIT 1), (SELECT id FROM professionals WHERE lower(name)=lower(NULLIF($3,'')) AND active LIMIT 1), $4::date, $5::date RETURNING json_build_object('waitlist_id',id,'estado','anotada')::text AS data\";\n    params = [waId, a.servicio || '', a.profesional || '', a.fecha_desde || '', a.fecha_hasta || ''];\n    break;\n  case 'derivar_a_humano':\n    return [{ json: { handoff: true, toolName: tc.name, razon: a.razon || 'sin motivo', categoria: a.categoria || 'fuera_de_alcance', _passthru: norm } }];\n  default:\n    return [{ json: { toolName: tc.name, error: 'herramienta desconocida', _passthru: norm } }];\n}\nreturn [{ json: { toolName: tc.name, query, queryParams: params, handoff: false, _passthru: norm } }];"
+      },
+      "id": "4b26dc3f-ba38-4a8e-af43-9b4493fa3a1c",
+      "name": "Ejecutar herramienta (armar)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2460, -180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "8b143c64-5371-4541-bc88-4e2d0096a735",
+              "leftValue": "={{ $json.handoff }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a7a86c77-f521-463e-9523-be971931cef7",
+      "name": "¿Herramienta es handoff?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2680, -180]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.query }}",
+        "options": { "queryReplacement": "={{ $json.queryParams }}" }
+      },
+      "id": "b80a4809-d8e7-4e7f-87a3-86ddd8a89066",
+      "name": "Postgres · Herramienta",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [2900, -100],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const armar = $('Ejecutar herramienta (armar)').item.json;\nconst norm = armar._passthru;\nconst tc = norm.toolCalls[0];\nlet resultData;\nif ($input.first().json.error) resultData = { error: String($input.first().json.error) };\nelse resultData = $input.first().json.data !== undefined ? $input.first().json.data : $input.first().json;\n\nconst messages = [\n  ...norm._messages,\n  { role: 'assistant', content: `Llamé a la herramienta ${tc.name} con ${JSON.stringify(tc.args)}.` },\n  { role: 'user', content: `Resultado de ${tc.name}: ${JSON.stringify(resultData)}. Redactá la respuesta para la clienta en base a esto. No muestres IDs ni JSON.` }\n];\nreturn [{ json: { system: norm._system, messages, tools: norm._tools, _ctx: norm._ctx, _waId: norm._waId, _buffer: norm._buffer } }];"
+      },
+      "id": "17c7bedd-f12b-4a7d-bc9b-1fc01974d555",
+      "name": "Componer resultado tool",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3120, -100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const provider = '__MODEL_PROVIDER__';\nconst model = '__MODEL_NAME__';\nconst src = $input.first().json;\nconst system = src.system || '';\nconst messages = Array.isArray(src.messages) ? src.messages : [];\nconst tools = Array.isArray(src.tools) ? src.tools : [];\nfunction sanearParaGemini(schema){const s=JSON.parse(JSON.stringify(schema||{}));const walk=(o)=>{if(!o||typeof o!=='object')return;delete o.additionalProperties;delete o.$comment;delete o.minLength;delete o.minItems;if(o.format==='e164'||o.format==='uuid')delete o.format;if(o.properties)Object.values(o.properties).forEach(walk);if(o.items)walk(o.items);};walk(s);return s;}\nlet url, method='POST', headers={}, body={};\nif (provider === 'claude') {\n  url='https://api.anthropic.com/v1/messages';\n  headers={'anthropic-version':'2023-06-01'};\n  body={model,max_tokens:1024,temperature:0.3,system,messages:messages.map(m=>({role:m.role==='assistant'?'assistant':'user',content:m.content})),tools:tools.map(t=>({name:t.name,description:t.description,input_schema:t.parameters}))};\n} else {\n  url=`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;\n  body={system_instruction:{parts:[{text:system}]},contents:messages.map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:String(m.content)}]})),tools:[{function_declarations:tools.map(t=>({name:t.name,description:t.description,parameters:sanearParaGemini(t.parameters)}))}],generationConfig:{temperature:0.3}};\n}\nreturn [{ json: { url, method, headers, body, provider } }];"
+      },
+      "id": "d7f7f130-706d-4ea5-8ea5-6aa9cd153810",
+      "name": "Modelo · Construir request 2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3340, -100]
+    },
+    {
+      "parameters": {
+        "method": "={{ $json.method }}",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "={{ JSON.stringify($json.headers) }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "0761eb92-209c-486e-8093-dd8a58f7810c",
+      "name": "Modelo · Llamar 2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3560, -100],
+      "credentials": { "httpHeaderAuth": { "id": "__CRED_MODEL__", "name": "__CRED_MODEL__" } },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const provider = '__MODEL_PROVIDER__';\nconst resp = $input.first().json;\nlet text = '';\nif (provider === 'claude') { for (const b of (resp.content||[])) if (b.type==='text') text += b.text; }\nelse { for (const p of (resp.candidates?.[0]?.content?.parts||[])) if (p.text) text += p.text; }\nconst armar = $('Ejecutar herramienta (armar)').item.json;\nreturn [{ json: { finalText: text.trim() || 'Listo.', handoff: false, toolName: armar.toolName || null } }];"
+      },
+      "id": "8ce15008-9d45-4389-993a-3255b358b8b1",
+      "name": "Modelo · Normalizar 2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3780, -100]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { finalText: $json.text || 'Perdón, no te entendí. ¿Me lo repetís?', handoff: false } }];"
+      },
+      "id": "e5f83f6c-e2d9-4392-8140-f2e5b79f3bc6",
+      "name": "Resp · directa",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2460, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const a = $json;\nreturn [{ json: { finalText: 'Te paso con alguien del local, en un rato te escriben.', handoff: true, razon: a.razon, categoria: a.categoria } }];"
+      },
+      "id": "a21968ba-6644-48a9-9f24-9d1ec63c6cf9",
+      "name": "Resp · handoff directo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2900, -300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { finalText: 'Perdón, se me complicó procesar esto. Ya te contacta alguien del local', handoff: true, razon: 'error técnico del modelo', categoria: 'fuera_de_alcance' } }];"
+      },
+      "id": "10fd8541-bc87-4cf0-a157-efb4a5acbea9",
+      "name": "Resp · fallback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2240, 320]
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $json;\nconst ctx = $('Construir contexto modelo').item.json.ctx || {};\nconst waId = $('Disparado por webhook/recovery').item.json.waId;\nlet text = r.finalText || 'Listo.';\nif (!ctx.consent_shown_at) {\n  text = 'Al continuar aceptás recibir mensajes automáticos del local. Escribí BAJA en cualquier momento para dejar de recibirlos.\\n\\n' + text;\n}\nconst waPayload = { messaging_product: 'whatsapp', to: waId, type: 'text', text: { body: text } };\nreturn [{ json: {\n  waPayload,\n  conversationId: ctx.conversation_id,\n  clientId: ctx.client_id,\n  needsConsent: !ctx.consent_shown_at,\n  handoff: !!r.handoff, razon: r.razon || null, categoria: r.categoria || null,\n  finalText: text, waId\n} }];"
+      },
+      "id": "61ee8960-4f98-48c7-b293-2ad16d71dcb3",
+      "name": "Construir waPayload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4100, 20]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.waPayload) }}",
+        "options": { "timeout": 15000 }
+      },
+      "id": "fc4cce74-9e5a-4aac-94fd-8d7a17df8dbf",
+      "name": "WhatsApp · Enviar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [4320, 20],
+      "credentials": { "httpHeaderAuth": { "id": "__CRED_WHATSAPP__", "name": "__CRED_WHATSAPP__" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE conversations SET last_outbound_at = now() WHERE id = $1;\nUPDATE clients SET consent_shown_at = now() WHERE id = $2 AND consent_shown_at IS NULL;\nINSERT INTO messages (conversation_id, direction, content)\nSELECT $1::uuid, 'inbound', value->>'text' FROM jsonb_array_elements($3::jsonb) AS value\nUNION ALL SELECT $1::uuid, 'outbound', $4;",
+        "options": {
+          "queryReplacement": "={{ [$('Construir waPayload').item.json.conversationId, $('Construir waPayload').item.json.clientId, JSON.stringify($('Construir contexto modelo').item.json.buffer || []), $('Construir waPayload').item.json.finalText] }}"
+        }
+      },
+      "id": "4cc4c209-a6b0-4451-8ae7-c45034472a45",
+      "name": "Persistir conversación",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [4540, 20],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO runs (conversation_id, inbound_messages, model_used, tokens_in, tokens_out, tools_called, response_text, total_latency_ms, error)\nVALUES ($1::uuid, $2::jsonb, $3, $4::int, $5::int, $6::jsonb, $7, $8::int, $9);",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Construir waPayload').item.json.conversationId,\n  JSON.stringify($('Construir contexto modelo').item.json.buffer || []),\n  '__MODEL_PROVIDER__/__MODEL_NAME__',\n  ($('Modelo · Normalizar').item.json.usage || {}).in || 0,\n  ($('Modelo · Normalizar').item.json.usage || {}).out || 0,\n  JSON.stringify($('Modelo · Normalizar').item.json.toolCalls || []),\n  $('Construir waPayload').item.json.finalText,\n  0,\n  $('Construir waPayload').item.json.handoff ? 'handoff' : null\n] }}"
+        }
+      },
+      "id": "7860c390-b439-4444-9ebe-947ad8eee6ae",
+      "name": "Registrar run",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [4760, 20],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "42c4db7c-b877-40e7-8e01-0b8e5fe08476",
+              "leftValue": "={{ $('Construir waPayload').item.json.handoff }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0a4e6d11-d283-4e59-9e4d-a5d4f654f56c",
+      "name": "¿Derivar a humano?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [4980, 20]
+    },
+    {
+      "parameters": {
+        "workflowId": { "__rl": true, "value": "__FLOW_HANDOFF_ID__", "mode": "id" },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "mode": "open",
+            "waId": "={{ $('Disparado por webhook/recovery').item.json.waId }}",
+            "conversationId": "={{ $('Construir waPayload').item.json.conversationId }}",
+            "razon": "={{ $('Construir waPayload').item.json.razon }}",
+            "categoria": "={{ $('Construir waPayload').item.json.categoria }}",
+            "lastClientMessage": "={{ ($('Construir contexto modelo').item.json.buffer || []).map(m => m.text).join(' ') }}"
+          }
+        },
+        "options": { "waitForSubWorkflow": false }
+      },
+      "id": "9ab5ee60-db47-4145-a1d5-e9ea32d639d3",
+      "name": "Disparar flow-handoff",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [5200, -80]
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "=__REDIS_PREFIX__:buffer:{{ $('Disparado por webhook/recovery').item.json.waId }}",
+        "options": {}
+      },
+      "id": "315a499f-6bcd-486a-a3a0-d5e4afe65a70",
+      "name": "Limpiar · buffer",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [5200, 120],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "=__REDIS_PREFIX__:count:{{ $('Disparado por webhook/recovery').item.json.waId }}",
+        "options": {}
+      },
+      "id": "42f31f40-d728-4ec6-bbf6-a7426ac2f94c",
+      "name": "Limpiar · contador",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [5420, 120],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "=__REDIS_PREFIX__:pending:{{ $('Disparado por webhook/recovery').item.json.waId }}",
+        "options": {}
+      },
+      "id": "44c5e43e-fb68-44b1-944a-09c9d0dac971",
+      "name": "Limpiar · pendiente",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [5640, 120],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "=__REDIS_PREFIX__:lock:{{ $('Disparado por webhook/recovery').item.json.waId }}",
+        "options": {}
+      },
+      "id": "9ae9ee97-75a2-433c-9433-e80a89763ca5",
+      "name": "Lock · Liberar",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [5860, 120],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    }
+  ],
+  "connections": {
+    "Disparado por webhook/recovery": { "main": [[{ "node": "Lock · Consultar", "type": "main", "index": 0 }]] },
+    "Lock · Consultar": { "main": [[{ "node": "Lock · ¿Libre?", "type": "main", "index": 0 }]] },
+    "Lock · ¿Libre?": {
+      "main": [
+        [{ "node": "Lock · Tomar", "type": "main", "index": 0 }],
+        [{ "node": "Lock · Ocupado (fin)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Lock · Tomar": { "main": [[{ "node": "Leer buffer", "type": "main", "index": 0 }]] },
+    "Leer buffer": { "main": [[{ "node": "¿Hay mensajes?", "type": "main", "index": 0 }]] },
+    "¿Hay mensajes?": {
+      "main": [
+        [{ "node": "Cargar contexto", "type": "main", "index": 0 }],
+        [{ "node": "Lock · Liberar", "type": "main", "index": 0 }]
+      ]
+    },
+    "Cargar contexto": { "main": [[{ "node": "¿Conversación activa?", "type": "main", "index": 0 }]] },
+    "¿Conversación activa?": {
+      "main": [
+        [{ "node": "Construir contexto modelo", "type": "main", "index": 0 }],
+        [{ "node": "Pausada · liberar y salir", "type": "main", "index": 0 }]
+      ]
+    },
+    "Pausada · liberar y salir": { "main": [[{ "node": "Lock · Liberar", "type": "main", "index": 0 }]] },
+    "Construir contexto modelo": { "main": [[{ "node": "Modelo · Construir request", "type": "main", "index": 0 }]] },
+    "Modelo · Construir request": { "main": [[{ "node": "Modelo · Llamar", "type": "main", "index": 0 }]] },
+    "Modelo · Llamar": {
+      "main": [
+        [{ "node": "Modelo · Normalizar", "type": "main", "index": 0 }],
+        [{ "node": "Resp · fallback", "type": "main", "index": 0 }]
+      ]
+    },
+    "Modelo · Normalizar": { "main": [[{ "node": "¿Pidió herramienta?", "type": "main", "index": 0 }]] },
+    "¿Pidió herramienta?": {
+      "main": [
+        [{ "node": "Ejecutar herramienta (armar)", "type": "main", "index": 0 }],
+        [{ "node": "Resp · directa", "type": "main", "index": 0 }]
+      ]
+    },
+    "Ejecutar herramienta (armar)": { "main": [[{ "node": "¿Herramienta es handoff?", "type": "main", "index": 0 }]] },
+    "¿Herramienta es handoff?": {
+      "main": [
+        [{ "node": "Resp · handoff directo", "type": "main", "index": 0 }],
+        [{ "node": "Postgres · Herramienta", "type": "main", "index": 0 }]
+      ]
+    },
+    "Postgres · Herramienta": {
+      "main": [
+        [{ "node": "Componer resultado tool", "type": "main", "index": 0 }],
+        [{ "node": "Componer resultado tool", "type": "main", "index": 0 }]
+      ]
+    },
+    "Componer resultado tool": { "main": [[{ "node": "Modelo · Construir request 2", "type": "main", "index": 0 }]] },
+    "Modelo · Construir request 2": { "main": [[{ "node": "Modelo · Llamar 2", "type": "main", "index": 0 }]] },
+    "Modelo · Llamar 2": {
+      "main": [
+        [{ "node": "Modelo · Normalizar 2", "type": "main", "index": 0 }],
+        [{ "node": "Resp · fallback", "type": "main", "index": 0 }]
+      ]
+    },
+    "Modelo · Normalizar 2": { "main": [[{ "node": "Construir waPayload", "type": "main", "index": 0 }]] },
+    "Resp · directa": { "main": [[{ "node": "Construir waPayload", "type": "main", "index": 0 }]] },
+    "Resp · handoff directo": { "main": [[{ "node": "Construir waPayload", "type": "main", "index": 0 }]] },
+    "Resp · fallback": { "main": [[{ "node": "Construir waPayload", "type": "main", "index": 0 }]] },
+    "Construir waPayload": { "main": [[{ "node": "WhatsApp · Enviar", "type": "main", "index": 0 }]] },
+    "WhatsApp · Enviar": { "main": [[{ "node": "Persistir conversación", "type": "main", "index": 0 }]] },
+    "Persistir conversación": { "main": [[{ "node": "Registrar run", "type": "main", "index": 0 }]] },
+    "Registrar run": { "main": [[{ "node": "¿Derivar a humano?", "type": "main", "index": 0 }]] },
+    "¿Derivar a humano?": {
+      "main": [
+        [{ "node": "Disparar flow-handoff", "type": "main", "index": 0 }],
+        [{ "node": "Limpiar · buffer", "type": "main", "index": 0 }]
+      ]
+    },
+    "Disparar flow-handoff": { "main": [[{ "node": "Limpiar · buffer", "type": "main", "index": 0 }]] },
+    "Limpiar · buffer": { "main": [[{ "node": "Limpiar · contador", "type": "main", "index": 0 }]] },
+    "Limpiar · contador": { "main": [[{ "node": "Limpiar · pendiente", "type": "main", "index": 0 }]] },
+    "Limpiar · pendiente": { "main": [[{ "node": "Lock · Liberar", "type": "main", "index": 0 }]] }
+  }
+}
