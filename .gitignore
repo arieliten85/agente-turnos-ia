@@ -6,6 +6,11 @@ node_modules/
 .env
 .env.local
 .env.*.local
+.env.production
+.env.staging
+
+# Respaldos previos a migraciones destructivas (update.js)
+/backups/
 
 # Estado del setup — es por instalación, no por repo
 .setup-state.json
