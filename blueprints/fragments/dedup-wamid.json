@@ -1,0 +1,71 @@
+{
+  "meta": {
+    "fragment": "dedup-wamid",
+    "version": "1.0",
+    "descripcion": "Descarta webhooks repetidos de Meta. Intenta insertar el wamid en processed_messages antes de procesar; si el INSERT no devuelve fila, ya fue procesado y hay que cortar devolviendo 200.",
+    "entrada": "$json.wamid — WhatsApp Message ID del mensaje entrante.",
+    "salida": "Rama true de 'Dedup · ¿Nuevo?' = mensaje nuevo, seguir. Rama false = duplicado, terminar.",
+    "placeholders": ["__CRED_POSTGRES__"],
+    "notas": "processed_messages.wamid es PRIMARY KEY. El ON CONFLICT DO NOTHING + RETURNING es la barrera atómica."
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO processed_messages (wamid)\nVALUES ($1)\nON CONFLICT (wamid) DO NOTHING\nRETURNING wamid;",
+        "options": {
+          "queryReplacement": "={{ $json.wamid }}"
+        }
+      },
+      "id": "d30c21b0-dbfb-4316-8a3a-2ae721ec891b",
+      "name": "Dedup · Insertar wamid",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [0, 0],
+      "credentials": {
+        "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "8be5c58e-316e-4535-904b-ab68185553c5",
+              "leftValue": "={{ $json.wamid }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "exists", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7a32f925-b6e0-45bb-84a2-0af77d5a9d92",
+      "name": "Dedup · ¿Nuevo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {},
+      "id": "87fc9bfb-1d1e-4d6c-b345-e876610a6419",
+      "name": "Dedup · Duplicado (fin)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [440, 120]
+    }
+  ],
+  "connections": {
+    "Dedup · Insertar wamid": {
+      "main": [[{ "node": "Dedup · ¿Nuevo?", "type": "main", "index": 0 }]]
+    },
+    "Dedup · ¿Nuevo?": {
+      "main": [
+        [],
+        [{ "node": "Dedup · Duplicado (fin)", "type": "main", "index": 0 }]
+      ]
+    }
+  }
+}

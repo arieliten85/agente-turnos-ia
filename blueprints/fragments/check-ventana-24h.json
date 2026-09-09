@@ -1,0 +1,53 @@
+{
+  "meta": {
+    "fragment": "check-ventana-24h",
+    "version": "1.0",
+    "descripcion": "Consulta si una conversación está dentro de la ventana de 24 h de Meta. Cualquier flujo que quiera mandar un mensaje libre lo llama antes; si está fuera, tiene que usar una plantilla aprobada.",
+    "entrada": "$json.conversationId — id de la fila en conversations.",
+    "salida": "Rama true de '¿Dentro de la ventana?' = mensaje libre permitido. Rama false = usar plantilla.",
+    "placeholders": ["__CRED_POSTGRES__"],
+    "notas": "check_message_window devuelve false si no existe la conversación (COALESCE en la función SQL)."
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT check_message_window($1) AS dentro;",
+        "options": { "queryReplacement": "={{ $json.conversationId }}" }
+      },
+      "id": "53609b34-90b2-475c-bf72-f46cc10cdefd",
+      "name": "Ventana 24h · Consultar",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [0, 0],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "47ebe9c2-25bf-459e-91a9-2c9e642eb2c6",
+              "leftValue": "={{ $json.dentro }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ed97359d-e908-4605-b8e4-b5e3ee32296c",
+      "name": "¿Dentro de la ventana?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [220, 0]
+    }
+  ],
+  "connections": {
+    "Ventana 24h · Consultar": {
+      "main": [[{ "node": "¿Dentro de la ventana?", "type": "main", "index": 0 }]]
+    }
+  }
+}

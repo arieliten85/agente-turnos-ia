@@ -1,0 +1,103 @@
+{
+  "meta": {
+    "fragment": "buffer-redis",
+    "version": "1.0",
+    "descripcion": "Acumula los mensajes entrantes de una conversación en Redis y lleva un contador de debounce. El buffer se guarda como string JSON (el nodo Redis de n8n no expone LRANGE).",
+    "entrada": "$json.waId, $json.text, $json.wamid, $json.type, $json.firstReceiptTs",
+    "salida": "$json.buffer (array), y el contador nuevo queda en el nodo 'Buffer · Contador'.",
+    "placeholders": ["__REDIS_PREFIX__", "__BUFFER_TTL_SECONDS__", "__CRED_REDIS__"],
+    "notas": "La ventana de carrera del GET+append+SET la cubren el bajo volumen, el lock de flow-agent y flow-recovery."
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "bufferRaw",
+        "key": "=__REDIS_PREFIX__:buffer:{{ $json.waId }}",
+        "keyType": "string",
+        "options": {}
+      },
+      "id": "e07ba0f9-305e-4eb5-83bb-73cd73516632",
+      "name": "Buffer · Leer",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "credentials": {
+        "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nlet buffer = [];\ntry { buffer = JSON.parse(item.bufferRaw || '[]'); } catch (e) { buffer = []; }\n\nconst nuevo = {\n  wamid: item.wamid,\n  text: item.text || '',\n  type: item.type || 'text',\n  ts: item.firstReceiptTs || new Date().toISOString()\n};\n\n// Dedupe por wamid y tope de 20 mensajes\nif (!buffer.some(m => m.wamid === nuevo.wamid)) buffer.push(nuevo);\nbuffer = buffer.slice(-20);\n\nconst firstTs = buffer.length ? buffer[0].ts : nuevo.ts;\n\nreturn [{ json: { ...item, buffer, bufferString: JSON.stringify(buffer), firstReceiptTs: firstTs } }];"
+      },
+      "id": "727a6dbb-46f8-464d-bfe6-2371158fc3ba",
+      "name": "Buffer · Componer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=__REDIS_PREFIX__:buffer:{{ $json.waId }}",
+        "value": "={{ $json.bufferString }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": "={{ Number('__BUFFER_TTL_SECONDS__') }}",
+        "valueIsJSON": false,
+        "options": {}
+      },
+      "id": "6158831c-ab1e-4ab7-80f3-faa22e49217e",
+      "name": "Buffer · Guardar",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [440, 0],
+      "credentials": {
+        "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "incr",
+        "key": "=__REDIS_PREFIX__:count:{{ $json.waId }}",
+        "expire": true,
+        "ttl": "={{ Number('__BUFFER_TTL_SECONDS__') }}",
+        "options": {}
+      },
+      "id": "5402c607-fbc0-4ae0-89de-0e9b831fb95e",
+      "name": "Buffer · Contador",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [660, 0],
+      "credentials": {
+        "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=__REDIS_PREFIX__:pending:{{ $json.waId }}",
+        "value": "={{ $json.firstReceiptTs }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": "={{ Number('__BUFFER_TTL_SECONDS__') }}",
+        "valueIsJSON": false,
+        "options": {}
+      },
+      "id": "43c6d244-e726-4eda-b3ef-739af28ec6c8",
+      "name": "Buffer · Marcar pendiente",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [880, 0],
+      "credentials": {
+        "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" }
+      }
+    }
+  ],
+  "connections": {
+    "Buffer · Leer": { "main": [[{ "node": "Buffer · Componer", "type": "main", "index": 0 }]] },
+    "Buffer · Componer": { "main": [[{ "node": "Buffer · Guardar", "type": "main", "index": 0 }]] },
+    "Buffer · Guardar": { "main": [[{ "node": "Buffer · Contador", "type": "main", "index": 0 }]] },
+    "Buffer · Contador": { "main": [[{ "node": "Buffer · Marcar pendiente", "type": "main", "index": 0 }]] }
+  }
+}

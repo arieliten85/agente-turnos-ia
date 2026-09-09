@@ -1,0 +1,52 @@
+{
+  "meta": {
+    "fragment": "envio-whatsapp",
+    "version": "1.0",
+    "descripcion": "Manda un mensaje por la Cloud API de Meta y registra la salida en conversations. El caller arma $json.waPayload (texto, plantilla o interactivo) segun lo que necesite.",
+    "entrada": "$json.waPayload (objeto del body de /messages), $json.conversationId (opcional, para registrar last_outbound_at).",
+    "salida": "$json = respuesta de Meta (incluye messages[0].id = wamid saliente).",
+    "placeholders": ["__WA_GRAPH_VERSION__", "__WA_PHONE_NUMBER_ID__", "__CRED_WHATSAPP__", "__CRED_POSTGRES__"],
+    "notas": "waPayload de texto: { messaging_product:'whatsapp', to, type:'text', text:{ body } }. El nodo 'Registrar salida' es best-effort: si no hay conversationId, no hace nada."
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.waPayload) }}",
+        "options": { "timeout": 15000 }
+      },
+      "id": "ddb8e02f-f7b8-47dd-9779-79d17d023f27",
+      "name": "WhatsApp · Enviar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, 0],
+      "credentials": {
+        "httpHeaderAuth": { "id": "__CRED_WHATSAPP__", "name": "__CRED_WHATSAPP__" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE conversations\nSET last_outbound_at = now()\nWHERE id = $1;",
+        "options": { "queryReplacement": "={{ $json.conversationId || null }}" }
+      },
+      "id": "95938073-3db5-474d-ab9d-ccb6ece9b023",
+      "name": "WhatsApp · Registrar salida",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [220, 0],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "WhatsApp · Enviar": {
+      "main": [[{ "node": "WhatsApp · Registrar salida", "type": "main", "index": 0 }]]
+    }
+  }
+}

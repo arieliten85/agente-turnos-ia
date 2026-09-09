@@ -1,0 +1,98 @@
+{
+  "meta": {
+    "fragment": "lock-conversacion",
+    "version": "1.0",
+    "descripcion": "Lock por conversación en Redis. flow-agent lo toma ANTES de leer el buffer para que flow-recovery no pise una ejecución viva. Incluye el grupo para tomarlo y el nodo para liberarlo.",
+    "entrada": "$json.waId",
+    "salida": "Rama true de 'Lock · ¿Libre?' = lock tomado, seguir. Rama false = ocupado, terminar sin responder.",
+    "placeholders": ["__REDIS_PREFIX__", "__CRED_REDIS__"],
+    "notas": "El nodo Redis de n8n no expone SET NX, así que se hace GET y luego SET. Peor caso: respuesta con demora, nunca sin respuesta. TTL de 120 s para que un crash no deje la conversación trabada."
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "lockActual",
+        "key": "=__REDIS_PREFIX__:lock:{{ $json.waId }}",
+        "keyType": "string",
+        "options": {}
+      },
+      "id": "d506d8a7-67a2-415f-be3d-34abb2a37aac",
+      "name": "Lock · Consultar",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "2585fede-00ba-4fc9-a6e4-c42d4eb73a4d",
+              "leftValue": "={{ $json.lockActual }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notExists", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6e100296-b602-4464-8f31-db3d420b6ad9",
+      "name": "Lock · ¿Libre?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=__REDIS_PREFIX__:lock:{{ $json.waId }}",
+        "value": "={{ $execution.id }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 120,
+        "valueIsJSON": false,
+        "options": {}
+      },
+      "id": "83733db4-d46f-4e9f-a038-6fcb2b2afa48",
+      "name": "Lock · Tomar",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [440, -80],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    },
+    {
+      "parameters": {},
+      "id": "07067b63-efe2-4a72-af3e-17c8a65460a5",
+      "name": "Lock · Ocupado (fin)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [440, 100]
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "=__REDIS_PREFIX__:lock:{{ $json.waId }}",
+        "options": {}
+      },
+      "id": "451020bb-a105-492c-8e17-3b58485c4781",
+      "name": "Lock · Liberar",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [880, 0],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    }
+  ],
+  "connections": {
+    "Lock · Consultar": { "main": [[{ "node": "Lock · ¿Libre?", "type": "main", "index": 0 }]] },
+    "Lock · ¿Libre?": {
+      "main": [
+        [{ "node": "Lock · Tomar", "type": "main", "index": 0 }],
+        [{ "node": "Lock · Ocupado (fin)", "type": "main", "index": 0 }]
+      ]
+    }
+  }
+}

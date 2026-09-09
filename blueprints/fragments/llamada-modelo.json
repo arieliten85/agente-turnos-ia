@@ -1,0 +1,65 @@
+{
+  "meta": {
+    "fragment": "llamada-modelo",
+    "version": "1.0",
+    "descripcion": "Arma el request al modelo según __MODEL_PROVIDER__ (gemini o claude), lo llama y normaliza la respuesta a { text, toolCalls, usage }. Las herramientas salen del contrato de agent/tools.json.",
+    "entrada": "$json.system (string), $json.messages ([{role, content}]), $json.tools (array con el formato de agent/tools.json -> tools[]).",
+    "salida": "$json.text, $json.toolCalls ([{name, args, id}]), $json.usage ({in, out}), $json.provider, $json.model. Salida de error del HTTP -> segundo output de 'Modelo · Llamar'.",
+    "placeholders": ["__MODEL_PROVIDER__", "__MODEL_NAME__", "__CRED_MODEL__"],
+    "notas": "gemini usa function_declarations y system_instruction aparte; claude usa tools nativas y header anthropic-version. El schema de cada tool se sanea para gemini (saca additionalProperties, format e164, minLength/minItems)."
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const provider = '__MODEL_PROVIDER__';\nconst model = '__MODEL_NAME__';\nconst src = $input.first().json;\nconst system = src.system || '';\nconst messages = Array.isArray(src.messages) ? src.messages : [];\nconst tools = Array.isArray(src.tools) ? src.tools : [];\n\nfunction sanearParaGemini(schema) {\n  const s = JSON.parse(JSON.stringify(schema || {}));\n  const walk = (o) => {\n    if (!o || typeof o !== 'object') return;\n    delete o.additionalProperties;\n    delete o.$comment;\n    delete o.minLength;\n    delete o.minItems;\n    if (o.format === 'e164' || o.format === 'uuid') delete o.format;\n    if (o.properties) Object.values(o.properties).forEach(walk);\n    if (o.items) walk(o.items);\n  };\n  walk(s);\n  return s;\n}\n\nlet url, method = 'POST', headers = {}, body = {};\n\nif (provider === 'claude') {\n  url = 'https://api.anthropic.com/v1/messages';\n  headers = { 'anthropic-version': '2023-06-01' };\n  body = {\n    model,\n    max_tokens: 1024,\n    temperature: 0.3,\n    system,\n    messages: messages.map(m => ({\n      role: m.role === 'assistant' ? 'assistant' : 'user',\n      content: m.content\n    })),\n    tools: tools.map(t => ({\n      name: t.name,\n      description: t.description,\n      input_schema: t.parameters\n    }))\n  };\n} else {\n  url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;\n  headers = {};\n  body = {\n    system_instruction: { parts: [{ text: system }] },\n    contents: messages.map(m => ({\n      role: m.role === 'assistant' ? 'model' : 'user',\n      parts: typeof m.content === 'string' ? [{ text: m.content }] : m.content\n    })),\n    tools: [{\n      function_declarations: tools.map(t => ({\n        name: t.name,\n        description: t.description,\n        parameters: sanearParaGemini(t.parameters)\n      }))\n    }],\n    generationConfig: { temperature: 0.3 }\n  };\n}\n\nreturn [{ json: { url, method, headers, body, provider, model } }];"
+      },
+      "id": "dbbce05b-2cef-4524-93ab-9ea784d1b27e",
+      "name": "Modelo · Construir request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "={{ $json.method }}",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "={{ JSON.stringify($json.headers) }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "cf793e79-06cb-4bca-878b-9372b643db07",
+      "name": "Modelo · Llamar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0],
+      "credentials": {
+        "httpHeaderAuth": { "id": "__CRED_MODEL__", "name": "__CRED_MODEL__" }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const provider = '__MODEL_PROVIDER__';\nconst resp = $input.first().json;\nlet text = '';\nconst toolCalls = [];\nlet usage = { in: 0, out: 0 };\n\nif (provider === 'claude') {\n  for (const block of (resp.content || [])) {\n    if (block.type === 'text') text += block.text;\n    if (block.type === 'tool_use') toolCalls.push({ id: block.id, name: block.name, args: block.input || {} });\n  }\n  usage = { in: resp.usage?.input_tokens || 0, out: resp.usage?.output_tokens || 0 };\n} else {\n  const parts = resp.candidates?.[0]?.content?.parts || [];\n  for (const p of parts) {\n    if (p.text) text += p.text;\n    if (p.functionCall) toolCalls.push({ id: null, name: p.functionCall.name, args: p.functionCall.args || {} });\n  }\n  usage = {\n    in: resp.usageMetadata?.promptTokenCount || 0,\n    out: resp.usageMetadata?.candidatesTokenCount || 0\n  };\n}\n\nreturn [{ json: { text: text.trim(), toolCalls, usage, provider, model: '__MODEL_NAME__', raw: resp } }];"
+      },
+      "id": "45dfae01-83fd-4d3d-878e-cee9357c7339",
+      "name": "Modelo · Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    }
+  ],
+  "connections": {
+    "Modelo · Construir request": {
+      "main": [[{ "node": "Modelo · Llamar", "type": "main", "index": 0 }]]
+    },
+    "Modelo · Llamar": {
+      "main": [[{ "node": "Modelo · Normalizar", "type": "main", "index": 0 }]]
+    }
+  }
+}
