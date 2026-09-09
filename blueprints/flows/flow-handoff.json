@@ -1,0 +1,272 @@
+{
+  "name": "turnos · flow-handoff",
+  "meta": {
+    "descripcion": "Dos modos. mode='open' (lo llama flow-agent): pausa la conversación, reenvía el contexto al WhatsApp del dueño (mensaje libre si está dentro de la ventana de 24 h, plantilla de re-engagement si no) y guarda a quién responderle. mode='relay' (lo llama flow-webhook cuando el dueño responde): manda la respuesta del dueño a la clienta y reactiva la conversación.",
+    "fragments": ["check-ventana-24h", "envio-whatsapp"],
+    "placeholders": ["__CRED_POSTGRES__", "__CRED_REDIS__", "__CRED_WHATSAPP__", "__WA_GRAPH_VERSION__", "__WA_PHONE_NUMBER_ID__", "__WA_TEMPLATE_REENGAGEMENT__", "__WA_TEMPLATE_LANG__", "__REDIS_PREFIX__"],
+    "notas": "El mapeo dueño→clienta se guarda en __REDIS_PREFIX__:handoff:last (TTL 3 h). Límite conocido: si hay dos handoffs abiertos a la vez, la respuesta del dueño va al último. Suficiente para volumen de salón; si crece, se mapea por quoted message id."
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "tags": [],
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "9f14fb7a-9fa0-4903-9aba-070c7fc49bc7",
+      "name": "Disparado por agente/webhook",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-400, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "5c8ddc3e-a61e-42e3-8083-4f16946cd38f",
+              "leftValue": "={{ $json.mode }}",
+              "rightValue": "open",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f3784490-bcb1-4b62-9b7e-31d2c5a97ea5",
+      "name": "¿Modo open?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-180, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE conversations\nSET state = 'paused_by_human', paused_at = now(), paused_until = now() + interval '3 hours'\nWHERE id = $1;",
+        "options": { "queryReplacement": "={{ [$json.conversationId] }}" }
+      },
+      "id": "7ebdd205-4d36-4e35-a995-0ddab7f8920e",
+      "name": "Pausar conversación",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [60, -120],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT b.handoff_phone,\n       b.name AS negocio,\n       cv.id  AS owner_conv_id\nFROM business b\nLEFT JOIN clients oc ON oc.phone = b.handoff_phone\nLEFT JOIN conversations cv ON cv.client_id = oc.id\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "1f8916f0-c581-49d5-a417-b99666450302",
+      "name": "Cargar dueño",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [280, -120],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT check_message_window($1) AS dentro;",
+        "options": { "queryReplacement": "={{ [$json.owner_conv_id] }}" }
+      },
+      "id": "0fe8697f-1d9f-4ddf-8728-419639535e71",
+      "name": "Ventana 24h · Consultar",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [500, -120],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "ec7f6728-55f9-4ae5-8672-3f05fe04007b",
+              "leftValue": "={{ $json.dentro }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d1d3082f-ec71-403c-8dd2-7791fa944537",
+      "name": "¿Dentro de la ventana?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [720, -120]
+    },
+    {
+      "parameters": {
+        "jsCode": "const t = $('Disparado por agente/webhook').item.json;\nconst duenio = $('Cargar dueño').item.json;\nconst cuerpo = [\n  '🔔 Handoff (' + (t.categoria || 'sin categoría') + ')',\n  'Clienta: ' + (t.waId || '—'),\n  'Motivo: ' + (t.razon || '—'),\n  'Último mensaje: ' + (t.lastClientMessage || '—'),\n  '',\n  'Respondé a este mensaje para contestarle a la clienta.'\n].join('\\n');\nconst waPayload = { messaging_product: 'whatsapp', to: duenio.handoff_phone, type: 'text', text: { body: cuerpo } };\nreturn [{ json: { waPayload } }];"
+      },
+      "id": "26e77c31-4d90-4a4f-8f0e-1d3a2b4c5d6e",
+      "name": "Payload dueño (libre)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, -220]
+    },
+    {
+      "parameters": {
+        "jsCode": "const duenio = $('Cargar dueño').item.json;\nconst waPayload = {\n  messaging_product: 'whatsapp',\n  to: duenio.handoff_phone,\n  type: 'template',\n  template: {\n    name: '__WA_TEMPLATE_REENGAGEMENT__',\n    language: { code: '__WA_TEMPLATE_LANG__' }\n  }\n};\nreturn [{ json: { waPayload } }];"
+      },
+      "id": "3a7b1c2d-5e6f-4a8b-9c0d-2e3f4a5b6c7d",
+      "name": "Payload dueño (plantilla)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, -20]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.waPayload) }}",
+        "options": { "timeout": 15000 }
+      },
+      "id": "4b8c2d3e-6f7a-4b9c-8d0e-3f4a5b6c7d8e",
+      "name": "WhatsApp · Avisar al dueño",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1160, -120],
+      "credentials": { "httpHeaderAuth": { "id": "__CRED_WHATSAPP__", "name": "__CRED_WHATSAPP__" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=__REDIS_PREFIX__:handoff:last",
+        "value": "={{ $('Disparado por agente/webhook').item.json.waId }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 10800,
+        "valueIsJSON": false,
+        "options": {}
+      },
+      "id": "5c9d3e4f-7a8b-4c0d-9e1f-4a5b6c7d8e9f",
+      "name": "Guardar mapeo handoff",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1380, -120],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "clientWaId",
+        "key": "=__REDIS_PREFIX__:handoff:last",
+        "keyType": "string",
+        "options": {}
+      },
+      "id": "6d0e4f5a-8b9c-4d1e-0f2a-5b6c7d8e9f0a",
+      "name": "Leer mapeo handoff",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [60, 160],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "7e1f5a6b-9c0d-4e2f-1a3b-6c7d8e9f0a1b",
+              "leftValue": "={{ $json.clientWaId }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "exists", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8f2a6b7c-0d1e-4f3a-2b4c-7d8e9f0a1b2c",
+      "name": "¿Hay destino?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [280, 160]
+    },
+    {
+      "parameters": {
+        "jsCode": "const clientWaId = $json.clientWaId;\nconst ownerText = $('Disparado por agente/webhook').item.json.ownerText || '';\nconst waPayload = { messaging_product: 'whatsapp', to: clientWaId, type: 'text', text: { body: ownerText } };\nreturn [{ json: { waPayload, clientWaId } }];"
+      },
+      "id": "9a3b7c8d-1e2f-4a4b-3c5d-8e9f0a1b2c3d",
+      "name": "Payload a la clienta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.waPayload) }}",
+        "options": { "timeout": 15000 }
+      },
+      "id": "0b4c8d9e-2f3a-4b5c-4d6e-9f0a1b2c3d4e",
+      "name": "WhatsApp · Responder a la clienta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 160],
+      "credentials": { "httpHeaderAuth": { "id": "__CRED_WHATSAPP__", "name": "__CRED_WHATSAPP__" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE conversations\nSET state = 'active', paused_at = NULL, paused_until = NULL\nWHERE phone = $1;",
+        "options": { "queryReplacement": "={{ [$('Payload a la clienta').item.json.clientWaId] }}" }
+      },
+      "id": "1c5d9e0f-3a4b-4c6d-5e7f-0a1b2c3d4e5f",
+      "name": "Reactivar conversación",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [940, 160],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
+    }
+  ],
+  "connections": {
+    "Disparado por agente/webhook": { "main": [[{ "node": "¿Modo open?", "type": "main", "index": 0 }]] },
+    "¿Modo open?": {
+      "main": [
+        [{ "node": "Pausar conversación", "type": "main", "index": 0 }],
+        [{ "node": "Leer mapeo handoff", "type": "main", "index": 0 }]
+      ]
+    },
+    "Pausar conversación": { "main": [[{ "node": "Cargar dueño", "type": "main", "index": 0 }]] },
+    "Cargar dueño": { "main": [[{ "node": "Ventana 24h · Consultar", "type": "main", "index": 0 }]] },
+    "Ventana 24h · Consultar": { "main": [[{ "node": "¿Dentro de la ventana?", "type": "main", "index": 0 }]] },
+    "¿Dentro de la ventana?": {
+      "main": [
+        [{ "node": "Payload dueño (libre)", "type": "main", "index": 0 }],
+        [{ "node": "Payload dueño (plantilla)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Payload dueño (libre)": { "main": [[{ "node": "WhatsApp · Avisar al dueño", "type": "main", "index": 0 }]] },
+    "Payload dueño (plantilla)": { "main": [[{ "node": "WhatsApp · Avisar al dueño", "type": "main", "index": 0 }]] },
+    "WhatsApp · Avisar al dueño": { "main": [[{ "node": "Guardar mapeo handoff", "type": "main", "index": 0 }]] },
+    "Leer mapeo handoff": { "main": [[{ "node": "¿Hay destino?", "type": "main", "index": 0 }]] },
+    "¿Hay destino?": {
+      "main": [
+        [{ "node": "Payload a la clienta", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Payload a la clienta": { "main": [[{ "node": "WhatsApp · Responder a la clienta", "type": "main", "index": 0 }]] },
+    "WhatsApp · Responder a la clienta": { "main": [[{ "node": "Reactivar conversación", "type": "main", "index": 0 }]] }
+  }
+}
