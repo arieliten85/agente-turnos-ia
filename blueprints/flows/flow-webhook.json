@@ -1,0 +1,379 @@
+{
+  "name": "turnos · flow-webhook",
+  "meta": {
+    "descripcion": "Entrada de mensajes de Meta. Responde 200 al toque, deduplica por wamid, acumula en el buffer de Redis, espera __BUFFER_SECONDS__ y, si no llegó otro mensaje, dispara flow-agent. Detecta también las respuestas del dueño a un handoff.",
+    "fragments": ["dedup-wamid", "buffer-redis"],
+    "placeholders": ["__WEBHOOK_PATH__", "__WA_VERIFY_TOKEN__", "__HANDOFF_PHONE_DIGITS__", "__REDIS_PREFIX__", "__BUFFER_SECONDS__", "__BUFFER_TTL_SECONDS__", "__CRED_POSTGRES__", "__CRED_REDIS__", "__FLOW_AGENT_ID__", "__FLOW_HANDOFF_ID__"]
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "saveManualExecutions": true, "callerPolicy": "workflowsFromSameOwner" },
+  "pinData": {},
+  "tags": [],
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "__WEBHOOK_PATH__",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "ee3848f6-9fcc-4aa6-bd04-a2768cd18c63",
+      "name": "Verificación Meta (GET)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-260, -160],
+      "webhookId": "e6b543f7-aea3-4009-a405-5e1bf87eaace"
+    },
+    {
+      "parameters": {
+        "jsCode": "const q = $input.first().json.query || {};\nif (q['hub.mode'] === 'subscribe' && q['hub.verify_token'] === '__WA_VERIFY_TOKEN__') {\n  return [{ json: { challenge: q['hub.challenge'] } }];\n}\nreturn [{ json: { challenge: 'invalid' } }];"
+      },
+      "id": "09d5b774-d5e2-4f2c-8955-11d24fc349b2",
+      "name": "Responder challenge",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-40, -160]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "__WEBHOOK_PATH__",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "ed09bab3-55d2-4bab-a7e7-e5cd0d62291a",
+      "name": "Webhook Meta (POST)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-260, 80],
+      "webhookId": "a1c4b53b-ed6f-486b-9a0d-8133049de87a"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"ok\" } }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "4ae74b4e-491c-47a8-b815-8eea89b26573",
+      "name": "Responder 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-40, 80]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst value = body?.entry?.[0]?.changes?.[0]?.value || {};\nconst msg = value.messages?.[0];\nconst contact = value.contacts?.[0];\n\nif (!msg) {\n  return [{ json: { hasMessage: false } }];\n}\n\nlet text = '';\nif (msg.type === 'text') text = msg.text?.body || '';\nelse if (msg.type === 'button') text = msg.button?.text || msg.button?.payload || '';\nelse if (msg.type === 'interactive') {\n  text = msg.interactive?.button_reply?.title\n      || msg.interactive?.list_reply?.title\n      || msg.interactive?.button_reply?.id\n      || '';\n}\n\nconst waId = msg.from;\nreturn [{ json: {\n  hasMessage: true,\n  waId,\n  wamid: msg.id,\n  type: msg.type,\n  text,\n  buttonPayload: msg.button?.payload || msg.interactive?.button_reply?.id || null,\n  quotedId: msg.context?.id || null,\n  contactName: contact?.profile?.name || null,\n  phoneNumberId: value.metadata?.phone_number_id || null,\n  isFromOwner: waId === '__HANDOFF_PHONE_DIGITS__',\n  firstReceiptTs: new Date().toISOString()\n} }];"
+      },
+      "id": "9e57821e-a5f9-4587-85b0-6bb0c91caac4",
+      "name": "Extraer mensaje",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [180, 80]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "36deedaa-ba76-4bbf-8eb6-a2b65351b5f6",
+              "leftValue": "={{ $json.hasMessage }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "97dbfc6c-952a-428c-aea7-a166a999039b",
+      "name": "¿Es mensaje entrante?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [400, 80]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "0a3524be-e913-421a-b6c3-61c3a9749f06",
+              "leftValue": "={{ $json.isFromOwner }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "51c88ebb-d8b1-4849-9b6c-5313aeed4c56",
+      "name": "¿Respuesta del dueño?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [620, 80]
+    },
+    {
+      "parameters": {
+        "workflowId": { "__rl": true, "value": "__FLOW_HANDOFF_ID__", "mode": "id" },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "mode": "relay",
+            "ownerText": "={{ $json.text }}"
+          }
+        },
+        "options": { "waitForSubWorkflow": false }
+      },
+      "id": "f2646164-36e0-4713-b83c-6fa472fc57af",
+      "name": "Relay a flow-handoff",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [840, -60]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO processed_messages (wamid)\nVALUES ($1)\nON CONFLICT (wamid) DO NOTHING\nRETURNING wamid;",
+        "options": { "queryReplacement": "={{ $json.wamid }}" }
+      },
+      "id": "c882f1cf-7dce-42e3-8c60-ccc2172f7c00",
+      "name": "Dedup · Insertar wamid",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [840, 180],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "3751712e-ba76-4290-88a8-bd5fcad010c3",
+              "leftValue": "={{ $json.wamid }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "exists", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d4732ecc-fff1-47cd-9bce-945245337f41",
+      "name": "Dedup · ¿Nuevo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1060, 180]
+    },
+    {
+      "parameters": {},
+      "id": "b9d56c76-1a79-4465-8a34-e568bcec35a1",
+      "name": "Dedup · Duplicado (fin)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1280, 320]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "bufferRaw",
+        "key": "=__REDIS_PREFIX__:buffer:{{ $('Extraer mensaje').item.json.waId }}",
+        "keyType": "string",
+        "options": {}
+      },
+      "id": "14c2e568-faa3-48f9-8bda-20ed8cf6ad5f",
+      "name": "Buffer · Leer",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1280, 100],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('Extraer mensaje').item.json;\nlet buffer = [];\ntry { buffer = JSON.parse($json.bufferRaw || '[]'); } catch (e) { buffer = []; }\n\nconst nuevo = { wamid: src.wamid, text: src.text || '', type: src.type || 'text', ts: src.firstReceiptTs };\nif (!buffer.some(m => m.wamid === nuevo.wamid)) buffer.push(nuevo);\nbuffer = buffer.slice(-20);\n\nreturn [{ json: { waId: src.waId, buffer, bufferString: JSON.stringify(buffer), firstReceiptTs: buffer[0]?.ts || nuevo.ts } }];"
+      },
+      "id": "2838ee49-857a-44d8-9700-87c21a602bd8",
+      "name": "Buffer · Componer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1500, 100]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=__REDIS_PREFIX__:buffer:{{ $json.waId }}",
+        "value": "={{ $json.bufferString }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": "={{ Number('__BUFFER_TTL_SECONDS__') }}",
+        "valueIsJSON": false,
+        "options": {}
+      },
+      "id": "852424a9-352d-48fd-a00b-6540dc2472c8",
+      "name": "Buffer · Guardar",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1720, 100],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    },
+    {
+      "parameters": {
+        "operation": "incr",
+        "key": "=__REDIS_PREFIX__:count:{{ $('Extraer mensaje').item.json.waId }}",
+        "expire": true,
+        "ttl": "={{ Number('__BUFFER_TTL_SECONDS__') }}",
+        "options": {}
+      },
+      "id": "02c0b1a1-1da9-4f53-a93b-cc175c12601f",
+      "name": "Buffer · Contador",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1940, 100],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst nums = Object.values(raw).map(Number).filter(n => Number.isFinite(n));\nconst expected = nums.length ? nums[0] : null;\nreturn [{ json: { waId: $('Extraer mensaje').item.json.waId, expectedCount: expected, firstReceiptTs: $('Buffer · Componer').item.json.firstReceiptTs } }];"
+      },
+      "id": "ccbe00cf-2326-4157-9952-1132d08b2164",
+      "name": "Capturar contador",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2160, 100]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=__REDIS_PREFIX__:pending:{{ $json.waId }}",
+        "value": "={{ $json.firstReceiptTs }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": "={{ Number('__BUFFER_TTL_SECONDS__') }}",
+        "valueIsJSON": false,
+        "options": {}
+      },
+      "id": "f4acae1c-2f33-453d-a203-ec0d369b7266",
+      "name": "Buffer · Marcar pendiente",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [2380, 100],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    },
+    {
+      "parameters": {
+        "amount": "={{ Number('__BUFFER_SECONDS__') }}",
+        "unit": "seconds"
+      },
+      "id": "badcf372-6d91-48d1-b3d5-c2779ac80098",
+      "name": "Espera buffer",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [2600, 100],
+      "webhookId": "0e178019-9d3e-4360-8f52-74c2b1e469aa"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "countActual",
+        "key": "=__REDIS_PREFIX__:count:{{ $('Extraer mensaje').item.json.waId }}",
+        "keyType": "string",
+        "options": {}
+      },
+      "id": "2ad1f215-1664-4aa1-92e6-e45a09f7b0f6",
+      "name": "Releer contador",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [2820, 100],
+      "credentials": { "redis": { "id": "__CRED_REDIS__", "name": "__CRED_REDIS__" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "06f8c269-89f5-4e45-addf-9a6bd04829e0",
+              "leftValue": "={{ Number($json.countActual) }}",
+              "rightValue": "={{ Number($('Capturar contador').item.json.expectedCount) }}",
+              "operator": { "type": "number", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bddf4258-8569-4238-968b-4670d75df5c5",
+      "name": "¿Sigue igual el contador?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3040, 100]
+    },
+    {
+      "parameters": {
+        "workflowId": { "__rl": true, "value": "__FLOW_AGENT_ID__", "mode": "id" },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "waId": "={{ $('Extraer mensaje').item.json.waId }}",
+            "via": "webhook"
+          }
+        },
+        "options": { "waitForSubWorkflow": false }
+      },
+      "id": "442b9c24-d5bd-4d1e-b36e-c47322f2cd33",
+      "name": "Disparar flow-agent",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [3260, 20]
+    },
+    {
+      "parameters": {},
+      "id": "4fb45a27-4e69-4bb9-bfe4-04ff48ff12df",
+      "name": "Cede a ejecución posterior",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [3260, 220]
+    }
+  ],
+  "connections": {
+    "Verificación Meta (GET)": { "main": [[{ "node": "Responder challenge", "type": "main", "index": 0 }]] },
+    "Webhook Meta (POST)": { "main": [[{ "node": "Responder 200", "type": "main", "index": 0 }]] },
+    "Responder 200": { "main": [[{ "node": "Extraer mensaje", "type": "main", "index": 0 }]] },
+    "Extraer mensaje": { "main": [[{ "node": "¿Es mensaje entrante?", "type": "main", "index": 0 }]] },
+    "¿Es mensaje entrante?": {
+      "main": [
+        [{ "node": "¿Respuesta del dueño?", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "¿Respuesta del dueño?": {
+      "main": [
+        [{ "node": "Relay a flow-handoff", "type": "main", "index": 0 }],
+        [{ "node": "Dedup · Insertar wamid", "type": "main", "index": 0 }]
+      ]
+    },
+    "Dedup · Insertar wamid": { "main": [[{ "node": "Dedup · ¿Nuevo?", "type": "main", "index": 0 }]] },
+    "Dedup · ¿Nuevo?": {
+      "main": [
+        [{ "node": "Buffer · Leer", "type": "main", "index": 0 }],
+        [{ "node": "Dedup · Duplicado (fin)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Buffer · Leer": { "main": [[{ "node": "Buffer · Componer", "type": "main", "index": 0 }]] },
+    "Buffer · Componer": { "main": [[{ "node": "Buffer · Guardar", "type": "main", "index": 0 }]] },
+    "Buffer · Guardar": { "main": [[{ "node": "Buffer · Contador", "type": "main", "index": 0 }]] },
+    "Buffer · Contador": { "main": [[{ "node": "Capturar contador", "type": "main", "index": 0 }]] },
+    "Capturar contador": { "main": [[{ "node": "Buffer · Marcar pendiente", "type": "main", "index": 0 }]] },
+    "Buffer · Marcar pendiente": { "main": [[{ "node": "Espera buffer", "type": "main", "index": 0 }]] },
+    "Espera buffer": { "main": [[{ "node": "Releer contador", "type": "main", "index": 0 }]] },
+    "Releer contador": { "main": [[{ "node": "¿Sigue igual el contador?", "type": "main", "index": 0 }]] },
+    "¿Sigue igual el contador?": {
+      "main": [
+        [{ "node": "Disparar flow-agent", "type": "main", "index": 0 }],
+        [{ "node": "Cede a ejecución posterior", "type": "main", "index": 0 }]
+      ]
+    }
+  }
+}
