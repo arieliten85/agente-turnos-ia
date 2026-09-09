@@ -1,0 +1,86 @@
+{
+  "name": "turnos · flow-reminder",
+  "meta": {
+    "descripcion": "Cron horario. Busca turnos confirmados dentro de la ventana de recordatorio del negocio que todavía no fueron notificados, manda la plantilla con botones Confirmar / Reprogramar / Cancelar y registra el envío en reminders_sent. Salta a los clientes con opt-out.",
+    "fragments": ["envio-whatsapp"],
+    "placeholders": ["__CRED_POSTGRES__", "__CRED_WHATSAPP__", "__WA_GRAPH_VERSION__", "__WA_PHONE_NUMBER_ID__", "__WA_TEMPLATE_REMINDER__", "__WA_TEMPLATE_LANG__", "__REMINDER_TYPE__"],
+    "notas": "La plantilla __WA_TEMPLATE_REMINDER__ tiene 3 parámetros de body (nombre, cuándo, profesional) y 3 botones quick_reply. Los payloads llevan el appointment_id para que flow-webhook/flow-agent sepan de qué turno se habla."
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "tags": [],
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "hours", "hoursInterval": 1 }] }
+      },
+      "id": "6d028562-74e5-46ad-b268-71e3131a0de9",
+      "name": "Cron horario",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT a.id AS appointment_id,\n       c.phone,\n       coalesce(c.name, '') AS client_name,\n       p.name AS professional_name,\n       to_char(a.starts_at AT TIME ZONE b.timezone, 'DD/MM') || ' a las ' || to_char(a.starts_at AT TIME ZONE b.timezone, 'HH24:MI') AS cuando\nFROM appointments a\nJOIN clients c ON c.id = a.client_id\nJOIN professionals p ON p.id = a.professional_id\nCROSS JOIN business b\nWHERE a.status = 'confirmed'\n  AND c.opted_out = false\n  AND a.starts_at BETWEEN now() AND now() + (b.reminder_hours || ' hours')::interval\n  AND NOT EXISTS (\n    SELECT 1 FROM reminders_sent r\n    WHERE r.appointment_id = a.id AND r.reminder_type = '__REMINDER_TYPE__'\n  );",
+        "options": {}
+      },
+      "id": "5cb32941-008c-4d45-9953-36b26731f78c",
+      "name": "Buscar turnos a recordar",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [220, 0],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const it = $json;\nconst waPayload = {\n  messaging_product: 'whatsapp',\n  to: it.phone,\n  type: 'template',\n  template: {\n    name: '__WA_TEMPLATE_REMINDER__',\n    language: { code: '__WA_TEMPLATE_LANG__' },\n    components: [\n      { type: 'body', parameters: [\n        { type: 'text', text: it.client_name || 'Hola' },\n        { type: 'text', text: it.cuando },\n        { type: 'text', text: it.professional_name }\n      ] },\n      { type: 'button', sub_type: 'quick_reply', index: '0', parameters: [{ type: 'payload', payload: 'CONFIRMAR_' + it.appointment_id }] },\n      { type: 'button', sub_type: 'quick_reply', index: '1', parameters: [{ type: 'payload', payload: 'REPROGRAMAR_' + it.appointment_id }] },\n      { type: 'button', sub_type: 'quick_reply', index: '2', parameters: [{ type: 'payload', payload: 'CANCELAR_' + it.appointment_id }] }\n    ]\n  }\n};\nreturn [{ json: { waPayload, appointment_id: it.appointment_id } }];"
+      },
+      "id": "b36f25e9-15d3-4b08-927a-1dc0b64c0636",
+      "name": "Construir plantilla",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.waPayload) }}",
+        "options": { "timeout": 15000 }
+      },
+      "id": "8f6f0c27-7e12-413e-90f9-cee484a8578c",
+      "name": "WhatsApp · Enviar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 0],
+      "credentials": { "httpHeaderAuth": { "id": "__CRED_WHATSAPP__", "name": "__CRED_WHATSAPP__" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO reminders_sent (appointment_id, reminder_type)\nVALUES ($1, '__REMINDER_TYPE__')\nON CONFLICT (appointment_id, reminder_type) DO NOTHING;",
+        "options": { "queryReplacement": "={{ [$('Construir plantilla').item.json.appointment_id] }}" }
+      },
+      "id": "3b13ba5f-94ea-4904-a930-f9032b49630d",
+      "name": "Registrar recordatorio",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [880, 0],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
+    }
+  ],
+  "connections": {
+    "Cron horario": { "main": [[{ "node": "Buscar turnos a recordar", "type": "main", "index": 0 }]] },
+    "Buscar turnos a recordar": { "main": [[{ "node": "Construir plantilla", "type": "main", "index": 0 }]] },
+    "Construir plantilla": { "main": [[{ "node": "WhatsApp · Enviar", "type": "main", "index": 0 }]] },
+    "WhatsApp · Enviar": { "main": [[{ "node": "Registrar recordatorio", "type": "main", "index": 0 }]] }
+  }
+}
