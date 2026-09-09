@@ -1,0 +1,65 @@
+# Stack local del agente de turnos: n8n + Redis (+ túnel de Cloudflare opcional).
+#
+#   docker compose up -d                    → n8n + Redis
+#   docker compose --profile tunnel up -d   → agrega el túnel de Cloudflare
+#
+# Los valores salen de .env (copiá .env.template). Nada de secretos acá.
+
+name: agente-turnos
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Buffer y locks son efímeros: sin persistencia a disco.
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      # --- n8n core ---
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-America/Argentina/Buenos_Aires}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_PERSONALIZATION_ENABLED=false
+      - N8N_RUNNERS_ENABLED=true
+      # Los nodos Code de los flujos no usan librerías externas, pero dejamos
+      # habilitados los builtin de Node por si un fragment los necesita.
+      - NODE_FUNCTION_ALLOW_BUILTIN=crypto
+      # --- visibles como $env dentro de los flujos ---
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - n8n-data:/home/node/.n8n
+    depends_on:
+      redis:
+        condition: service_healthy
+    # En Linux, para que n8n alcance el capture server de simulator.js
+    # (en Mac/Windows ya resuelve solo).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    command: ["tunnel", "run"]
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - n8n
+
+volumes:
+  n8n-data:

@@ -1,0 +1,125 @@
+{
+  "$comment": "Estado de UNA instalación del agente de turnos. Lo genera setup.js al crear el proyecto y lo actualizan las operaciones 'editar', 'probar' y 'promover'. Los secretos NO van acá: viven en .env y en las credenciales de n8n. Este archivo sí se versiona en Git.",
+
+  "template_version": "1.0.0",
+  "environment": "demo",
+  "deployment_mode": "single",
+  "created_at": null,
+  "updated_at": null,
+
+  "brand": {
+    "name": "",
+    "business_name": "",
+    "rubro": "",
+    "timezone": "America/Argentina/Buenos_Aires",
+    "address": "",
+    "contact_phone": "",
+    "handoff_phone": ""
+  },
+
+  "policy": {
+    "cancellation_hours": 24,
+    "reminder_hours": 24,
+    "buffer_seconds": 2.5,
+    "slot_granularity_min": 15,
+    "opt_out_keywords": ["BAJA", "STOP", "NO MOLESTAR"]
+  },
+
+  "tone": {
+    "custom": null
+  },
+
+  "model": {
+    "provider": "gemini",
+    "name": "gemini-2.0-flash"
+  },
+
+  "services": [
+    { "name": "", "duration_minutes": 0, "price": 0 }
+  ],
+
+  "professionals": [
+    {
+      "name": "",
+      "services": [],
+      "schedule": {
+        "mon": [], "tue": [], "wed": [], "thu": [], "fri": [], "sat": [], "sun": []
+      }
+    }
+  ],
+
+  "whatsapp": {
+    "api_base": "https://graph.facebook.com",
+    "graph_version": "v21.0",
+    "phone_number_id": "",
+    "waba_id": "",
+    "verify_token": "",
+    "webhook_path": "wa-turnos",
+    "template_lang": "es_AR",
+    "templates": {
+      "reminder": "turno_recordatorio",
+      "cancellation": "turno_cancelado_hueco",
+      "waitlist": "turno_lista_espera",
+      "reengagement": "handoff_reengagement"
+    },
+    "templates_status": {
+      "reminder": "pending",
+      "cancellation": "pending",
+      "waitlist": "pending",
+      "reengagement": "pending"
+    }
+  },
+
+  "supabase": {
+    "project_ref": "",
+    "url": "",
+    "region": "sa-east-1"
+  },
+
+  "n8n": {
+    "base_url": "http://localhost:5678",
+    "workflow_ids": {
+      "webhook": "",
+      "agent": "",
+      "reminder": "",
+      "handoff": "",
+      "recovery": ""
+    },
+    "credential_names": {
+      "postgres": "turnos · Supabase",
+      "redis": "turnos · Redis",
+      "whatsapp": "turnos · WhatsApp",
+      "model": "turnos · Modelo"
+    }
+  },
+
+  "redis": {
+    "prefix": "turnos"
+  },
+
+  "runtime": {
+    "buffer_ttl_seconds": 60,
+    "recovery_stale_seconds": 30,
+    "reminder_type": "24h"
+  },
+
+  "tunnel": {
+    "provider": "cloudflare",
+    "hostname": ""
+  },
+
+  "mcps": {
+    "supabase": "required",
+    "n8n": "optional",
+    "filesystem": "optional"
+  },
+
+  "setup": {
+    "mcps_registered": [],
+    "schema_applied": false,
+    "seed_loaded": false,
+    "flows_imported": false,
+    "webhook_active": false,
+    "last_connection_test": null
+  }
+}
