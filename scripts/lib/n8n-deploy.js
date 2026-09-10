@@ -60,7 +60,7 @@ export function buildFlow(flowName, env, ctx) {
     WA_TEMPLATE_REENGAGEMENT: env.WA_TEMPLATE_REENGAGEMENT || 'handoff_reengagement',
     HANDOFF_PHONE_DIGITS: env.HANDOFF_PHONE_DIGITS || '',
     MODEL_PROVIDER: (env.MODEL_PROVIDER || 'gemini').toLowerCase(),
-    MODEL_NAME: env.MODEL_NAME || 'gemini-2.0-flash',
+    MODEL_NAME: env.MODEL_NAME || 'gemini-flash-lite-latest',
     BUFFER_SECONDS: env.BUFFER_SECONDS || '2.5',
     BUFFER_TTL_SECONDS: env.BUFFER_TTL_SECONDS || '60',
     RECOVERY_STALE_SECONDS: env.RECOVERY_STALE_SECONDS || '30',

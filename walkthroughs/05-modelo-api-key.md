@@ -22,12 +22,17 @@ En el `.env`:
 
 ```
 MODEL_PROVIDER=gemini
-MODEL_NAME=gemini-2.0-flash
+MODEL_NAME=gemini-flash-lite-latest
 GEMINI_API_KEY=AIza...
 ```
 
-> **Riesgo asumido:** el free tier de Gemini puede recortarse sin aviso. Si empezás
-> a ver errores `429`, cambiá a Claude editando `MODEL_PROVIDER` y `MODEL_NAME` y
+`gemini-flash-lite-latest` responde rápido con el payload completo (identidad +
+reglas + 9 tools) y el alias `-latest` no se pincha cuando Google jubila una
+versión (a `gemini-2.0-flash`, por ejemplo, ya le devuelve `404`).
+
+> **Riesgo asumido:** el free tier de Gemini puede recortarse sin aviso y tira
+> `503 "high demand"` de forma intermitente. Los flujos ya reintentan; si el
+> problema persiste, cambiá a Claude editando `MODEL_PROVIDER` y `MODEL_NAME` y
 > recreando la credencial del modelo en n8n. El resto no se toca.
 
 ---
@@ -64,5 +69,5 @@ ningún JSON.
 | Variable | Valor |
 |---|---|
 | `MODEL_PROVIDER` | `gemini` o `claude` |
-| `MODEL_NAME` | `gemini-2.0-flash` / `claude-sonnet-5` |
+| `MODEL_NAME` | `gemini-flash-lite-latest` / `claude-sonnet-5` |
 | `GEMINI_API_KEY` o `ANTHROPIC_API_KEY` | según el provider |

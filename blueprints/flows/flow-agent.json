@@ -4,7 +4,7 @@
     "descripcion": "Procesa el buffer de una conversación: toma el lock ANTES de leer nada, arma el contexto (prompt 3 capas + historial), llama al modelo con las herramientas de agent/tools.json, ejecuta a lo sumo una herramienta, cierra con una segunda pasada del modelo, manda la respuesta, registra el run y libera el lock. Fallback ante error del modelo: avisa y deriva a un humano.",
     "fragments": ["lock-conversacion", "llamada-modelo", "envio-whatsapp"],
     "placeholders": ["__REDIS_PREFIX__", "__CRED_POSTGRES__", "__CRED_REDIS__", "__CRED_MODEL__", "__CRED_WHATSAPP__", "__WA_API_BASE__", "__WA_GRAPH_VERSION__", "__WA_PHONE_NUMBER_ID__", "__MODEL_PROVIDER__", "__MODEL_NAME__", "__AGENT_IDENTITY__", "__AGENT_RULES__", "__AGENT_TOOLS__", "__FLOW_HANDOFF_ID__"],
-    "notas": "Los nodos Postgres usan typeVersion 2.6 con options.queryReplacement como array (evita el split por coma). __AGENT_TOOLS__ lo reemplaza setup.js por el array agent/tools.json.tools. La segunda pasada del modelo narra el resultado de la herramienta en texto plano (no usa bloques tool_result nativos) para no depender del formato de cada proveedor."
+    "notas": "Los nodos Postgres usan typeVersion 2.6 con options.queryReplacement como array (evita el split por coma). __AGENT_TOOLS__ lo reemplaza setup.js por el array agent/tools.json.tools. La segunda pasada del modelo narra el resultado de la herramienta en texto plano (no usa bloques tool_result nativos) para no depender del formato de cada proveedor. 'Modelo · Llamar' y 'Modelo · Llamar 2' reintentan 4 veces con 3 s de espera y timeout de 45 s: el free tier de Gemini tira 503 'high demand' de forma intermitente. 'Registrar run' referencia 'Modelo · Normalizar' con guard .isExecuted porque ese nodo no corre en la rama de fallback."
   },
   "active": false,
   "settings": { "executionOrder": "v1", "saveManualExecutions": true },
@@ -206,7 +206,7 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.body) }}",
-        "options": { "timeout": 30000 }
+        "options": { "timeout": 45000 }
       },
       "id": "2a9ac329-83d2-4013-b213-830a777077ed",
       "name": "Modelo · Llamar",
@@ -214,7 +214,10 @@
       "typeVersion": 4.2,
       "position": [1800, -80],
       "credentials": { "httpHeaderAuth": { "id": "__CRED_MODEL__", "name": "__CRED_MODEL__" } },
-      "onError": "continueErrorOutput"
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
@@ -326,7 +329,7 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.body) }}",
-        "options": { "timeout": 30000 }
+        "options": { "timeout": 45000 }
       },
       "id": "0761eb92-209c-486e-8093-dd8a58f7810c",
       "name": "Modelo · Llamar 2",
@@ -334,7 +337,10 @@
       "typeVersion": 4.2,
       "position": [3560, -100],
       "credentials": { "httpHeaderAuth": { "id": "__CRED_MODEL__", "name": "__CRED_MODEL__" } },
-      "onError": "continueErrorOutput"
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
@@ -426,7 +432,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO runs (conversation_id, inbound_messages, model_used, tokens_in, tokens_out, tools_called, response_text, total_latency_ms, error)\nVALUES ($1::uuid, $2::jsonb, $3, $4::int, $5::int, $6::jsonb, $7, $8::int, $9);",
         "options": {
-          "queryReplacement": "={{ [\n  $('Construir waPayload').item.json.conversationId,\n  JSON.stringify($('Construir contexto modelo').item.json.buffer || []),\n  '__MODEL_PROVIDER__/__MODEL_NAME__',\n  ($('Modelo · Normalizar').item.json.usage || {}).in || 0,\n  ($('Modelo · Normalizar').item.json.usage || {}).out || 0,\n  JSON.stringify($('Modelo · Normalizar').item.json.toolCalls || []),\n  $('Construir waPayload').item.json.finalText,\n  0,\n  $('Construir waPayload').item.json.handoff ? 'handoff' : null\n] }}"
+          "queryReplacement": "={{ [\n  $('Construir waPayload').item.json.conversationId,\n  JSON.stringify($('Construir contexto modelo').item.json.buffer || []),\n  '__MODEL_PROVIDER__/__MODEL_NAME__',\n  $('Modelo · Normalizar').isExecuted ? (($('Modelo · Normalizar').item.json.usage || {}).in || 0) : 0,\n  $('Modelo · Normalizar').isExecuted ? (($('Modelo · Normalizar').item.json.usage || {}).out || 0) : 0,\n  JSON.stringify($('Modelo · Normalizar').isExecuted ? ($('Modelo · Normalizar').item.json.toolCalls || []) : []),\n  $('Construir waPayload').item.json.finalText,\n  0,\n  $('Construir waPayload').item.json.handoff ? 'handoff' : null\n] }}"
         }
       },
       "id": "7860c390-b439-4444-9ebe-947ad8eee6ae",

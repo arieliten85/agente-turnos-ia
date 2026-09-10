@@ -19,22 +19,32 @@ Supabase es Postgres administrado. Acá vive toda la lógica pesada del agente
 
 ## 2. Sacar los datos de conexión
 
-En el proyecto, **Project Settings** (el engranaje) → **Database**:
+En el proyecto, **Project Settings** (el engranaje) → **Database** → **Connection
+string**:
 
-- **Connection string → URI**, modo **Direct connection** (no el pooler). Se ve así:
+- Usá la del **pooler (Supavisor)**, modo **Session** (puerto `5432`). Se ve así:
 
   ```
-  postgresql://postgres:[PASSWORD]@db.<ref>.supabase.co:5432/postgres
+  postgresql://postgres.<ref>:[PASSWORD]@aws-0-<region>.pooler.supabase.com:5432/postgres
   ```
 
   Reemplazá `[PASSWORD]` por la que generaste. Eso va en `DATABASE_URL` del `.env`.
+  Fijate que el usuario es `postgres.<ref>`, no solo `postgres`.
+
+  > **Por qué el pooler y no la "Direct connection".** El host directo
+  > `db.<ref>.supabase.co` hoy resuelve **solo a IPv6**, y la red de Docker no
+  > tiene ruta IPv6: n8n falla con `connect ENETUNREACH ...:5432` en todos los
+  > nodos Postgres. El pooler resuelve a IPv4 y anda desde el contenedor.
+  > Session mode (5432) es el más compatible con el nodo Postgres de n8n; si tu
+  > cliente pide muchas conexiones cortas, podés usar Transaction mode (6543).
 
 - El **Project Reference** (`<ref>`, 20 caracteres) está en **Project Settings →
-  General**. Va en `SUPABASE_PROJECT_REF`.
+  General**. Va en `SUPABASE_PROJECT_REF`. La `<region>` del pooler (ej
+  `us-west-2`, `sa-east-1`) figura en la misma pantalla de Connection string.
 
 - La **Project URL** (`https://<ref>.supabase.co`) va en `SUPABASE_URL`.
 
-> El esquema y las migraciones se aplican con la conexión directa. El agente en
+> El esquema y las migraciones se aplican con esta misma cadena. El agente en
 > producción va a usar el MCP de Supabase; para eso alcanza con que el MCP esté
 > registrado apuntando a este proyecto (lo hace el setup).
 
@@ -77,6 +87,6 @@ Con eso alcanza: una consulta diaria mantiene el proyecto activo.
 
 | Variable | De dónde |
 |---|---|
-| `DATABASE_URL` | Connection string (Direct), con tu password |
+| `DATABASE_URL` | Connection string del **pooler**, Session mode (`...pooler.supabase.com:5432`), usuario `postgres.<ref>`, con tu password |
 | `SUPABASE_PROJECT_REF` | Project Settings → General |
 | `SUPABASE_URL` | `https://<ref>.supabase.co` |

@@ -33,7 +33,7 @@ texto sobre el JSON). Todos con la forma `__NOMBRE__`.
 | `__HANDOFF_PHONE_DIGITS__` | WhatsApp del dueño en E.164 sin `+` (para detectar sus respuestas) | — |
 | `__REDIS_PREFIX__` | Namespace de las claves de Redis | `turnos` |
 | `__MODEL_PROVIDER__` | `gemini` o `claude` | `gemini` |
-| `__MODEL_NAME__` | ID del modelo (ej `gemini-2.0-flash`, `claude-sonnet-5`) | — |
+| `__MODEL_NAME__` | ID del modelo (ej `gemini-flash-lite-latest`, `claude-sonnet-5`) | `gemini-flash-lite-latest` |
 | `__BUFFER_SECONDS__` | Espera de debounce del webhook | `2.5` |
 | `__BUFFER_TTL_SECONDS__` | TTL de las claves de buffer y contador | `60` |
 | `__RECOVERY_STALE_SECONDS__` | Antigüedad para que recovery reprocese un buffer | `30` |

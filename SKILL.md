@@ -123,7 +123,7 @@ User (`WA_TOKEN`), inventar `WA_VERIFY_TOKEN`, agregar destinatarios de prueba
 ### 7. Modelo
 
 Leé `walkthroughs/05-modelo-api-key.md`. Para demo: `MODEL_PROVIDER=gemini`,
-`MODEL_NAME=gemini-2.0-flash`, `GEMINI_API_KEY`.
+`MODEL_NAME=gemini-flash-lite-latest`, `GEMINI_API_KEY`.
 
 ### 8. Levantar el stack e importar los flujos
 
