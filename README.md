@@ -39,17 +39,21 @@ y en lo testeable sin infraestructura).
 | 8 | SKILL.md + walkthroughs + config/project.json + .env.template + docker-compose.yml | ✅ |
 | 9 | setup.js + update.js + promote.js + reset-demo.js (+ seed-demo.sql) | ✅ |
 
-## Uso (cuando esté listo)
+## Uso
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/arieliten85/agente-turnos-ia/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/arieliten85/agente-turnos-ia/main/install.sh | sh
 ```
 
-Luego en Claude Code:
+`install.sh` solo verifica requisitos (Docker, Docker Compose, Node 18+), clona el
+repo y copia `.env.template` a `.env`. No configura nada: eso lo conduce el
+`SKILL.md`. Luego, en Claude Code y dentro de la carpeta:
 
 ```
 /crear-agente-turnos
 ```
+
+Para la demo de consultorio odontológico, ver `walkthroughs/07-demo-odontologia.md`.
 
 ## Licencia
 
