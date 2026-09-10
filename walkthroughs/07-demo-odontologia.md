@@ -96,11 +96,12 @@ celular al número del demo:
 - [ ] Llega el recordatorio con sus tres botones (Confirmar / Reprogramar /
       Cancelar).
 
-> **Dependencias pendientes.** El rechazo de horario fuera de hora ya funciona
-> (bloque A, en la base). La detección de **BAJA**, el bucle de herramientas y la
-> validación de parámetros del agente son cambios de los blueprints de n8n que
-> todavía no están portados (B1–B4). Hasta que se apliquen, esos ítems del
-> checklist no van a pasar. Ver `PLAN-DE-TRABAJO-PENDIENTES.md`.
+> **Verificación en vivo.** Los bloques A–E están implementados, pero los
+> cambios de los blueprints de n8n (B1–B4, opt-out, bucle de herramientas,
+> validación de parámetros) todavía no se corrieron dentro de n8n: solo se
+> revisó el JSON y se probó el SQL. En la Etapa 1 hay que verificar cada ítem del
+> checklist de verdad. Ver `PLAN-DE-TRABAJO-PENDIENTES.md` para la lista de
+> puntos frágiles a mirar.
 
 > **Recordá:** el plan gratuito de Supabase pausa el proyecto tras 7 días sin
 > actividad. Para un demo que queda "vivo" varios días, dejá un ping automático
