@@ -32,7 +32,7 @@
     },
     {
       "name": "consultar_disponibilidad",
-      "description": "Devuelve los horarios de inicio libres para un servicio en una fecha. Es la única forma válida de saber si hay lugar: nunca deduzcas disponibilidad por tu cuenta. Si la clienta no aclaró profesional, mandá 'profesional' en null y la herramienta busca cualquiera que pueda hacer el servicio.",
+      "description": "Devuelve los horarios de inicio libres para uno o más servicios en una fecha. Es la única forma válida de saber si hay lugar: nunca deduzcas disponibilidad por tu cuenta. Si la persona pide varias cosas para la misma visita (ej. consulta + limpieza), mandá todos los servicios juntos en 'servicios': la duración se suma y solo aparecen los profesionales que pueden hacer todo. Si no aclaró profesional, mandá 'profesional' en null y la herramienta busca cualquiera que pueda.",
       "backend": { "kind": "sql_function", "target": "get_availability" },
       "parameters": {
         "type": "object",
@@ -43,10 +43,11 @@
             "format": "date",
             "description": "Día a consultar, en formato AAAA-MM-DD."
           },
-          "servicio": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Nombre del servicio tal como figura en consultar_servicios."
+          "servicios": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 },
+            "description": "Uno o más servicios para la misma visita, por nombre tal como figuran en consultar_servicios. Si la persona pide varias cosas juntas, van todas acá, nunca en consultas separadas."
           },
           "profesional": {
             "type": "string",
@@ -55,7 +56,7 @@
             "description": "Nombre del profesional si la clienta pidió uno puntual. null si da igual."
           }
         },
-        "required": ["fecha", "servicio"]
+        "required": ["fecha", "servicios"]
       }
     },
     {

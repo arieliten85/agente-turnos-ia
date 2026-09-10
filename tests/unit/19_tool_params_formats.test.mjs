@@ -13,28 +13,40 @@ export default function () {
 
   // --- format: date ---
   assertFallaEnCampo(
-    validateToolCall(spec, 'consultar_disponibilidad', { fecha: '12/09/2026', servicio: 'Corte' }),
+    validateToolCall(spec, 'consultar_disponibilidad', { fecha: '12/09/2026', servicios: ['Corte'] }),
     'fecha', 'AAAA-MM-DD', 'fecha con formato equivocado',
   );
   assertFallaEnCampo(
-    validateToolCall(spec, 'consultar_disponibilidad', { fecha: '2026-13-40', servicio: 'Corte' }),
+    validateToolCall(spec, 'consultar_disponibilidad', { fecha: '2026-13-40', servicios: ['Corte'] }),
     'fecha', null, 'fecha con mes/día imposible',
   );
   assertFallaEnCampo(
-    validateToolCall(spec, 'consultar_disponibilidad', { fecha: '2025-02-29', servicio: 'Corte' }),
+    validateToolCall(spec, 'consultar_disponibilidad', { fecha: '2025-02-29', servicios: ['Corte'] }),
     'fecha', null, '29 de febrero de año no bisiesto',
   );
 
-  // --- tipo equivocado ---
+  // --- tipo equivocado (item del array) ---
   assertFallaEnCampo(
-    validateToolCall(spec, 'consultar_disponibilidad', { fecha: '2026-09-12', servicio: 123 }),
-    'servicio', 'texto', 'servicio numérico',
+    validateToolCall(spec, 'consultar_disponibilidad', { fecha: '2026-09-12', servicios: [123] }),
+    'servicios[0]', 'texto', 'item de servicios numérico',
   );
 
-  // --- minLength (string vacío) ---
+  // --- array como string en vez de lista ---
   assertFallaEnCampo(
-    validateToolCall(spec, 'consultar_disponibilidad', { fecha: '2026-09-12', servicio: '' }),
-    'servicio', 'no puede estar vacío', 'servicio vacío',
+    validateToolCall(spec, 'consultar_disponibilidad', { fecha: '2026-09-12', servicios: 'Corte' }),
+    'servicios', 'una lista', 'servicios como string en vez de array',
+  );
+
+  // --- minLength (item vacío) ---
+  assertFallaEnCampo(
+    validateToolCall(spec, 'consultar_disponibilidad', { fecha: '2026-09-12', servicios: [''] }),
+    'servicios[0]', 'no puede estar vacío', 'item de servicios vacío',
+  );
+
+  // --- minItems (lista vacía) ---
+  assertFallaEnCampo(
+    validateToolCall(spec, 'consultar_disponibilidad', { fecha: '2026-09-12', servicios: [] }),
+    'servicios', 'al menos 1', 'servicios lista vacía',
   );
 
   // --- format: date-time ---
@@ -92,7 +104,7 @@ export default function () {
   // --- nullable: profesional acepta null explícito ---
   assertOk(
     validateToolCall(spec, 'consultar_disponibilidad', {
-      fecha: '2026-09-12', servicio: 'Corte', profesional: null,
+      fecha: '2026-09-12', servicios: ['Corte'], profesional: null,
     }),
     'profesional null es válido (nullable:true)',
   );

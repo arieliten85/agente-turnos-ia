@@ -14,7 +14,7 @@ export default function () {
   const casos = {
     consultar_servicios: {},
     consultar_horarios: {},
-    consultar_disponibilidad: { fecha: '2026-09-12', servicio: 'Corte' },
+    consultar_disponibilidad: { fecha: '2026-09-12', servicios: ['Corte'] },
     crear_turno: {
       cliente: TEL,
       servicios: ['Corte', 'Color'],

@@ -31,7 +31,7 @@ export default function () {
 
   // Falta un required
   assertFallaEnCampo(
-    validateToolCall(spec, 'consultar_disponibilidad', { servicio: 'Corte' }),
+    validateToolCall(spec, 'consultar_disponibilidad', { servicios: ['Corte'] }),
     'fecha',
     'Falta el parámetro',
     'falta fecha en consultar_disponibilidad',
@@ -57,7 +57,7 @@ export default function () {
   // Un opcional ausente no es error: consultar_disponibilidad sin profesional
   const okSinOpcional = validateToolCall(spec, 'consultar_disponibilidad', {
     fecha: '2026-09-12',
-    servicio: 'Corte',
+    servicios: ['Corte'],
   });
   assert(okSinOpcional.ok === true, 'profesional es opcional en consultar_disponibilidad');
 }
