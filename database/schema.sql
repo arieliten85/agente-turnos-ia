@@ -706,6 +706,8 @@ DECLARE
   v_service_id     uuid;
   v_order          smallint := 0;
   v_window         record;
+  v_requested      integer;
+  v_found          integer;
 BEGIN
   -- Validaciones básicas
   IF p_service_ids IS NULL OR array_length(p_service_ids, 1) IS NULL THEN
@@ -714,6 +716,20 @@ BEGIN
 
   IF p_starts_at <= now() THEN
     RAISE EXCEPTION 'La hora de inicio debe ser futura';
+  END IF;
+
+  -- Todos los servicios pedidos tienen que existir y estar activos. Si alguno
+  -- no resuelve, es un error explícito: nunca se acorta el turno en silencio.
+  SELECT count(DISTINCT s.id), COALESCE(SUM(s.duration_minutes), 0)
+    INTO v_found, v_total_duration
+    FROM services s
+    WHERE s.id = ANY(p_service_ids) AND s.active = true;
+
+  SELECT count(DISTINCT sid) INTO v_requested
+    FROM unnest(p_service_ids) AS sid;
+
+  IF v_found <> v_requested OR v_total_duration = 0 THEN
+    RAISE EXCEPTION 'Uno o más servicios son inexistentes o inactivos';
   END IF;
 
   -- Verificar que el profesional puede hacer todos los servicios pedidos
@@ -725,15 +741,6 @@ BEGIN
     )
   ) THEN
     RAISE EXCEPTION 'El profesional no puede realizar uno o más de los servicios pedidos';
-  END IF;
-
-  -- Calcular duración total sumando los servicios
-  SELECT COALESCE(SUM(s.duration_minutes), 0) INTO v_total_duration
-    FROM services s
-    WHERE s.id = ANY(p_service_ids) AND s.active = true;
-
-  IF v_total_duration = 0 THEN
-    RAISE EXCEPTION 'Ninguno de los servicios está activo';
   END IF;
 
   v_ends_at := p_starts_at + (v_total_duration || ' minutes')::interval;
@@ -770,10 +777,12 @@ END;
 $$;
 
 COMMENT ON FUNCTION book_appointment IS
-'Crea un turno. Valida la ventana horaria con slot_fits_schedule() antes de
-insertar y confía en la restricción de exclusión de appointments para atomicidad.
-p_force es de uso humano (handoff); el agente nunca lo manda en true.
-En v1 todos los servicios del bloque van con el mismo profesional.';
+'Crea un turno. Valida que todos los servicios existan y estén activos (nunca
+acorta el turno en silencio), que el profesional pueda hacerlos y que el rango
+entre en el horario (slot_fits_schedule). Confía en la restricción de exclusión
+de appointments para atomicidad. p_force es de uso humano (handoff); el agente
+nunca lo manda en true. En v1 todos los servicios del bloque van con el mismo
+profesional.';
 
 
 -- ----------------------------------------------------------------------------
