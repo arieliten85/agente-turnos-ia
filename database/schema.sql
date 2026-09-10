@@ -912,7 +912,7 @@ BEGIN
       SELECT 1 FROM professional_services ps
       WHERE ps.professional_id = v_pid AND ps.service_id = w.service_id
     )
-    -- El cliente no está en opt-out
+    -- La persona no está en opt-out
     AND c.opted_out = false
   ORDER BY w.created_at
   LIMIT 1;

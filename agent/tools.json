@@ -188,7 +188,7 @@
     },
     {
       "name": "derivar_a_humano",
-      "description": "Pasa la conversación a una persona del negocio y pausa el bot. Usala cuando la clienta pide hablar con alguien, ante un reclamo, tras dos incomprensiones seguidas, ante un pedido fuera de alcance que no podés reencauzar, o ante una cancelación tardía que no podés resolver sola.",
+      "description": "Pasa la conversación a una persona del negocio y pausa el bot. Usala cuando piden hablar con alguien, ante un reclamo, tras dos incomprensiones seguidas, ante un pedido fuera de alcance que no podés reencauzar, ante una cancelación tardía que no podés resolver sola, o ante una señal clínica o urgencia (dolor agudo, sangrado, hinchazón, fiebre).",
       "backend": { "kind": "workflow", "target": "flow-handoff" },
       "parameters": {
         "type": "object",
@@ -197,7 +197,7 @@
           "razon": {
             "type": "string",
             "minLength": 1,
-            "description": "Explicación breve de por qué se deriva, para el contexto que recibe la persona."
+            "description": "Nombre de la persona y motivo concreto, en una línea, para que quien recibe la derivación sepa con quién habla y de qué (ej.: 'Marta P., consulta por implante, quiere hablar con un profesional'). Si no tenés el nombre y no es una urgencia, pedilo antes de derivar."
           },
           "categoria": {
             "type": "string",
