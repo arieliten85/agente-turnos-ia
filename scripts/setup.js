@@ -271,7 +271,7 @@ async function stepN8nFlows(env, state) {
   proj.n8n.workflow_ids = {
     webhook: ctx.flowIds['flow-webhook'] || '', agent: ctx.flowIds['flow-agent'] || '',
     reminder: ctx.flowIds['flow-reminder'] || '', handoff: ctx.flowIds['flow-handoff'] || '',
-    recovery: ctx.flowIds['flow-recovery'] || '',
+    recovery: ctx.flowIds['flow-recovery'] || '', cleanup: ctx.flowIds['flow-cleanup'] || '',
   };
   if (!args.dryRun) { proj.setup.flows_imported = true; saveProjectJson(proj); }
   return ctx.flowIds;

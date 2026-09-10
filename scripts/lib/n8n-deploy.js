@@ -65,6 +65,8 @@ export function buildFlow(flowName, env, ctx) {
     BUFFER_TTL_SECONDS: env.BUFFER_TTL_SECONDS || '60',
     RECOVERY_STALE_SECONDS: env.RECOVERY_STALE_SECONDS || '30',
     REMINDER_TYPE: env.REMINDER_TYPE || '24h',
+    PROCESSED_RETENTION_DAYS: env.PROCESSED_RETENTION_DAYS || '7',
+    RUNS_RETENTION_DAYS: env.RUNS_RETENTION_DAYS || '90',
     WEBHOOK_PATH: env.WEBHOOK_PATH || 'wa-turnos',
     WA_VERIFY_TOKEN: env.WA_VERIFY_TOKEN || '',
     FLOW_AGENT_ID: ctx.flowIds['flow-agent'] || '',
@@ -109,4 +111,4 @@ export function buildFlow(flowName, env, ctx) {
   return payload;
 }
 
-export const FLOW_ORDER = ['flow-handoff', 'flow-agent', 'flow-webhook', 'flow-reminder', 'flow-recovery'];
+export const FLOW_ORDER = ['flow-handoff', 'flow-agent', 'flow-webhook', 'flow-reminder', 'flow-recovery', 'flow-cleanup'];

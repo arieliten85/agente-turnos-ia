@@ -87,7 +87,8 @@
       "agent": "3wxbZJ2Dr1CHJO3Y",
       "reminder": "F54OCcSLeBGpmSDy",
       "handoff": "a9vIsUBOxtAh4uGP",
-      "recovery": "vRQ8I19BCmv8hjDU"
+      "recovery": "vRQ8I19BCmv8hjDU",
+      "cleanup": ""
     },
     "credential_names": {
       "postgres": "turnos · Supabase",
@@ -102,7 +103,9 @@
   "runtime": {
     "buffer_ttl_seconds": 60,
     "recovery_stale_seconds": 30,
-    "reminder_type": "24h"
+    "reminder_type": "24h",
+    "processed_messages_retention_days": 7,
+    "runs_retention_days": 90
   },
   "tunnel": {
     "provider": "cloudflare",

@@ -1,10 +1,10 @@
 {
   "name": "turnos · flow-reminder",
   "meta": {
-    "descripcion": "Cron horario. Busca turnos confirmados dentro de la ventana de recordatorio del negocio que todavía no fueron notificados, manda la plantilla con botones Confirmar / Reprogramar / Cancelar y registra el envío en reminders_sent. Salta a los clientes con opt-out.",
+    "descripcion": "Cron horario. Busca turnos confirmados dentro de la ventana de recordatorio del negocio que todavía no fueron notificados, RESERVA el envío en reminders_sent (el UNIQUE hace de candado), manda la plantilla con botones Confirmar / Reprogramar / Cancelar y, si el envío falla, borra la reserva para reintentar la hora siguiente. Salta a los clientes con opt-out.",
     "fragments": ["envio-whatsapp"],
     "placeholders": ["__CRED_POSTGRES__", "__CRED_WHATSAPP__", "__WA_API_BASE__", "__WA_GRAPH_VERSION__", "__WA_PHONE_NUMBER_ID__", "__WA_TEMPLATE_REMINDER__", "__WA_TEMPLATE_LANG__", "__REMINDER_TYPE__"],
-    "notas": "La plantilla __WA_TEMPLATE_REMINDER__ tiene 3 parámetros de body (nombre, cuándo, profesional) y 3 botones quick_reply. Los payloads llevan el appointment_id para que flow-webhook/flow-agent sepan de qué turno se habla."
+    "notas": "Orden: insertar reminders_sent ANTES de enviar. Si el INSERT no devuelve fila, otra corrida ya reclamó ese turno y se saltea. Si el envío por WhatsApp falla, 'Borrar recordatorio' elimina la fila para que el próximo cron lo reintente. Así nunca se manda dos veces ni se pierde un recordatorio por un INSERT que falla después de un envío exitoso. La plantilla __WA_TEMPLATE_REMINDER__ tiene 3 parámetros de body (nombre, cuándo, profesional) y 3 botones quick_reply; los payloads llevan el appointment_id."
   },
   "active": false,
   "settings": { "executionOrder": "v1" },
@@ -46,41 +46,105 @@
     },
     {
       "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO reminders_sent (appointment_id, reminder_type)\nVALUES ($1, '__REMINDER_TYPE__')\nON CONFLICT (appointment_id, reminder_type) DO NOTHING\nRETURNING appointment_id;",
+        "options": { "queryReplacement": "={{ [$json.appointment_id] }}" }
+      },
+      "id": "3b13ba5f-94ea-4904-a930-f9032b49630d",
+      "name": "Reservar recordatorio",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [660, 0],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "e1000000-0000-4000-8000-000000000001",
+              "leftValue": "={{ $json.appointment_id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "exists", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e1000000-0000-4000-8000-000000000002",
+      "name": "¿Reserva propia?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
         "method": "POST",
         "url": "=__WA_API_BASE__/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.waPayload) }}",
+        "jsonBody": "={{ JSON.stringify($('Construir plantilla').item.json.waPayload) }}",
         "options": { "timeout": 15000 }
       },
       "id": "8f6f0c27-7e12-413e-90f9-cee484a8578c",
       "name": "WhatsApp · Enviar",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [660, 0],
+      "position": [1100, 0],
       "credentials": { "httpHeaderAuth": { "id": "__CRED_WHATSAPP__", "name": "__CRED_WHATSAPP__" } },
-      "onError": "continueRegularOutput"
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {},
+      "id": "e1000000-0000-4000-8000-000000000003",
+      "name": "Enviado (fin)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1320, -100]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO reminders_sent (appointment_id, reminder_type)\nVALUES ($1, '__REMINDER_TYPE__')\nON CONFLICT (appointment_id, reminder_type) DO NOTHING;",
+        "query": "DELETE FROM reminders_sent\nWHERE appointment_id = $1 AND reminder_type = '__REMINDER_TYPE__';",
         "options": { "queryReplacement": "={{ [$('Construir plantilla').item.json.appointment_id] }}" }
       },
-      "id": "3b13ba5f-94ea-4904-a930-f9032b49630d",
-      "name": "Registrar recordatorio",
+      "id": "e1000000-0000-4000-8000-000000000004",
+      "name": "Borrar recordatorio",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [880, 0],
-      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
+      "position": [1320, 100],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {},
+      "id": "e1000000-0000-4000-8000-000000000005",
+      "name": "Ya reservado por otra corrida (fin)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1100, 160]
     }
   ],
   "connections": {
     "Cron horario": { "main": [[{ "node": "Buscar turnos a recordar", "type": "main", "index": 0 }]] },
     "Buscar turnos a recordar": { "main": [[{ "node": "Construir plantilla", "type": "main", "index": 0 }]] },
-    "Construir plantilla": { "main": [[{ "node": "WhatsApp · Enviar", "type": "main", "index": 0 }]] },
-    "WhatsApp · Enviar": { "main": [[{ "node": "Registrar recordatorio", "type": "main", "index": 0 }]] }
+    "Construir plantilla": { "main": [[{ "node": "Reservar recordatorio", "type": "main", "index": 0 }]] },
+    "Reservar recordatorio": { "main": [[{ "node": "¿Reserva propia?", "type": "main", "index": 0 }]] },
+    "¿Reserva propia?": {
+      "main": [
+        [{ "node": "WhatsApp · Enviar", "type": "main", "index": 0 }],
+        [{ "node": "Ya reservado por otra corrida (fin)", "type": "main", "index": 0 }]
+      ]
+    },
+    "WhatsApp · Enviar": {
+      "main": [
+        [{ "node": "Enviado (fin)", "type": "main", "index": 0 }],
+        [{ "node": "Borrar recordatorio", "type": "main", "index": 0 }]
+      ]
+    }
   }
 }

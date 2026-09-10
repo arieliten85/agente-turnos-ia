@@ -1,0 +1,41 @@
+{
+  "name": "turnos · flow-cleanup",
+  "meta": {
+    "descripcion": "Cron diario. Rota las tablas de observabilidad que crecen sin límite: borra processed_messages de más de __PROCESSED_RETENTION_DAYS__ días y runs de más de __RUNS_RETENTION_DAYS__ días. En el plan gratuito de Supabase el disco es un límite que llega antes de lo que uno cree.",
+    "fragments": [],
+    "placeholders": ["__CRED_POSTGRES__", "__PROCESSED_RETENTION_DAYS__", "__RUNS_RETENTION_DAYS__"],
+    "notas": "Los dos números salen de config/project.json → runtime (processed_messages_retention_days, runs_retention_days). schema-decisions.md ya documentaba que estas tablas se pueden rotar; esto lo implementa. No toca appointments, messages ni ninguna tabla con datos de cliente."
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "tags": [],
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "days", "daysInterval": 1, "triggerAtHour": 4 }] }
+      },
+      "id": "e1000000-0000-4000-8000-0000000000c1",
+      "name": "Cron diario",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM processed_messages WHERE processed_at < now() - interval '__PROCESSED_RETENTION_DAYS__ days';\nDELETE FROM runs WHERE created_at < now() - interval '__RUNS_RETENTION_DAYS__ days';",
+        "options": {}
+      },
+      "id": "e1000000-0000-4000-8000-0000000000c2",
+      "name": "Rotar tablas",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [220, 0],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
+    }
+  ],
+  "connections": {
+    "Cron diario": { "main": [[{ "node": "Rotar tablas", "type": "main", "index": 0 }]] }
+  }
+}

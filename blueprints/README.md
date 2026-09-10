@@ -6,8 +6,9 @@ Piezas para armar los flujos del agente en n8n. Dos carpetas:
   solos: son la fuente canónica de cada pieza (buffer, lock, llamada al modelo,
   envío por WhatsApp, etc). Corregir una pieza acá y recomponer es más seguro que
   parchear un JSON monolítico.
-- **`flows/`** — los 5 flujos completos, importables en n8n. Cada uno ya trae
-  copiados los nodos de los fragments que compone.
+- **`flows/`** — los 6 flujos completos, importables en n8n (webhook, agent,
+  reminder, handoff, recovery, cleanup). Cada uno ya trae copiados los nodos de
+  los fragments que compone.
 
 ## Marcadores
 
@@ -38,6 +39,8 @@ texto sobre el JSON). Todos con la forma `__NOMBRE__`.
 | `__BUFFER_TTL_SECONDS__` | TTL de las claves de buffer y contador | `60` |
 | `__RECOVERY_STALE_SECONDS__` | Antigüedad para que recovery reprocese un buffer | `30` |
 | `__REMINDER_TYPE__` | Etiqueta del recordatorio en `reminders_sent` | `24h` |
+| `__PROCESSED_RETENTION_DAYS__` | Días que `flow-cleanup` conserva `processed_messages` | `7` |
+| `__RUNS_RETENTION_DAYS__` | Días que `flow-cleanup` conserva `runs` | `90` |
 | `__AGENT_IDENTITY__` | `agent/identity.md` (capa 1) inyectado como literal string JS (`JSON.stringify` del contenido) | — |
 | `__AGENT_RULES__` | `agent/rules.md` (capa 2) inyectado igual que identity | — |
 | `__FLOW_AGENT_ID__` | ID del workflow `flow-agent` ya importado en n8n | — |
