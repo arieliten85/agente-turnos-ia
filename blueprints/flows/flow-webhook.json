@@ -1,9 +1,10 @@
 {
   "name": "turnos · flow-webhook",
   "meta": {
-    "descripcion": "Entrada de mensajes de Meta. Responde 200 al toque, deduplica por wamid, acumula en el buffer de Redis, espera __BUFFER_SECONDS__ y, si no llegó otro mensaje, dispara flow-agent. Detecta también las respuestas del dueño a un handoff.",
+    "descripcion": "Entrada de mensajes de Meta. Responde 200 al toque, deduplica por wamid, detecta el opt-out (BAJA/STOP/…) antes de gastar un token, acumula en el buffer de Redis, espera __BUFFER_SECONDS__ y, si no llegó otro mensaje, dispara flow-agent. Detecta también las respuestas del dueño a un handoff.",
     "fragments": ["dedup-wamid", "buffer-redis"],
-    "placeholders": ["__WEBHOOK_PATH__", "__WA_VERIFY_TOKEN__", "__HANDOFF_PHONE_DIGITS__", "__REDIS_PREFIX__", "__BUFFER_SECONDS__", "__BUFFER_TTL_SECONDS__", "__CRED_POSTGRES__", "__CRED_REDIS__", "__FLOW_AGENT_ID__", "__FLOW_HANDOFF_ID__"]
+    "placeholders": ["__WEBHOOK_PATH__", "__WA_VERIFY_TOKEN__", "__HANDOFF_PHONE_DIGITS__", "__REDIS_PREFIX__", "__BUFFER_SECONDS__", "__BUFFER_TTL_SECONDS__", "__CRED_POSTGRES__", "__CRED_REDIS__", "__CRED_WHATSAPP__", "__WA_API_BASE__", "__WA_GRAPH_VERSION__", "__WA_PHONE_NUMBER_ID__", "__FLOW_AGENT_ID__", "__FLOW_HANDOFF_ID__"],
+    "notas": "El opt-out se detecta acá (nodos 'Opt-out · …') y NO pasa por flow-agent: normaliza el texto (sin acentos, sin signos, mayúsculas) y lo compara contra business.opt_out_keywords. Si matchea: upsert clients.opted_out=true + opted_out_at, responde el texto fijo de rules.md §5 por la Graph API y termina. Si NO matchea y el cliente estaba en opt-out, lo vuelve a poner en false (escribir es consentir). Nunca toca conversations.state."
   },
   "active": false,
   "settings": { "executionOrder": "v1", "saveManualExecutions": true, "callerPolicy": "workflowsFromSameOwner" },
@@ -174,6 +175,104 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [1280, 320]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT b.opt_out_keywords AS keywords, COALESCE(c.opted_out, false) AS ya_baja\nFROM business b\nLEFT JOIN clients c ON c.phone = $1\nLIMIT 1;",
+        "options": { "queryReplacement": "={{ $('Extraer mensaje').item.json.waId }}" }
+      },
+      "id": "5f1b0a10-1a11-4c22-9d33-aa0000000001",
+      "name": "Opt-out · Datos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1280, 480],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('Extraer mensaje').item.json;\nconst row = $input.first().json || {};\n\nlet kws = row.keywords;\nif (typeof kws === 'string') {\n  try { kws = JSON.parse(kws); }\n  catch (e) { kws = kws.replace(/^[{\\[]/, '').replace(/[}\\]]$/, '').split(',').map(s => s.replace(/^\\s*\"?|\"?\\s*$/g, '')); }\n}\nif (!Array.isArray(kws) || kws.length === 0) kws = ['BAJA', 'STOP', 'NO MOLESTAR'];\n\nconst norm = (s) => String(s || '')\n  .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n  .replace(/[^\\p{L}\\p{N}\\s]/gu, ' ')\n  .replace(/\\s+/g, ' ').trim().toUpperCase();\n\nconst t = norm(src.text);\nconst padded = ' ' + t + ' ';\nconst esBaja = t.length > 0 && kws.some(k => {\n  const nk = norm(k);\n  return nk.length > 0 && padded.includes(' ' + nk + ' ');\n});\n\nreturn [{ json: {\n  waId: src.waId,\n  esBaja,\n  yaBaja: row.ya_baja === true || row.ya_baja === 'true',\n  texto: 'Listo, no te mando más mensajes automáticos. Si algún día querés un turno, escribinos y lo hacemos.'\n} }];"
+      },
+      "id": "5f1b0a10-1a11-4c22-9d33-aa0000000002",
+      "name": "Opt-out · Evaluar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1500, 480]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "5f1b0a10-1a11-4c22-9d33-aa0000000003",
+              "leftValue": "={{ $json.esBaja }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5f1b0a10-1a11-4c22-9d33-aa0000000004",
+      "name": "Opt-out · ¿Baja?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1720, 480]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH upd AS (\n  INSERT INTO clients (phone, opted_out, opted_out_at)\n  VALUES ($1, true, now())\n  ON CONFLICT (phone) DO UPDATE SET opted_out = true, opted_out_at = now()\n  RETURNING 1\n)\nSELECT 1 AS ok;",
+        "options": { "queryReplacement": "={{ $('Opt-out · Evaluar').item.json.waId }}" }
+      },
+      "id": "5f1b0a10-1a11-4c22-9d33-aa0000000005",
+      "name": "Opt-out · Marcar baja",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1940, 400],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=__WA_API_BASE__/__WA_GRAPH_VERSION__/__WA_PHONE_NUMBER_ID__/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $('Opt-out · Evaluar').item.json.waId, type: 'text', text: { body: $('Opt-out · Evaluar').item.json.texto } }) }}",
+        "options": { "timeout": 15000 }
+      },
+      "id": "5f1b0a10-1a11-4c22-9d33-aa0000000006",
+      "name": "Opt-out · Avisar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2160, 400],
+      "credentials": { "httpHeaderAuth": { "id": "__CRED_WHATSAPP__", "name": "__CRED_WHATSAPP__" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {},
+      "id": "5f1b0a10-1a11-4c22-9d33-aa0000000007",
+      "name": "Opt-out · Fin (baja)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [2380, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH upd AS (\n  UPDATE clients SET opted_out = false, opted_out_at = NULL\n  WHERE phone = $1 AND opted_out = true\n  RETURNING 1\n)\nSELECT 1 AS ok;",
+        "options": { "queryReplacement": "={{ $('Extraer mensaje').item.json.waId }}" }
+      },
+      "id": "5f1b0a10-1a11-4c22-9d33-aa0000000008",
+      "name": "Opt-out · Reconsentir",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1940, 560],
+      "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
     },
     {
       "parameters": {
@@ -357,10 +456,21 @@
     "Dedup · Insertar wamid": { "main": [[{ "node": "Dedup · ¿Nuevo?", "type": "main", "index": 0 }]] },
     "Dedup · ¿Nuevo?": {
       "main": [
-        [{ "node": "Buffer · Leer", "type": "main", "index": 0 }],
+        [{ "node": "Opt-out · Datos", "type": "main", "index": 0 }],
         [{ "node": "Dedup · Duplicado (fin)", "type": "main", "index": 0 }]
       ]
     },
+    "Opt-out · Datos": { "main": [[{ "node": "Opt-out · Evaluar", "type": "main", "index": 0 }]] },
+    "Opt-out · Evaluar": { "main": [[{ "node": "Opt-out · ¿Baja?", "type": "main", "index": 0 }]] },
+    "Opt-out · ¿Baja?": {
+      "main": [
+        [{ "node": "Opt-out · Marcar baja", "type": "main", "index": 0 }],
+        [{ "node": "Opt-out · Reconsentir", "type": "main", "index": 0 }]
+      ]
+    },
+    "Opt-out · Marcar baja": { "main": [[{ "node": "Opt-out · Avisar", "type": "main", "index": 0 }]] },
+    "Opt-out · Avisar": { "main": [[{ "node": "Opt-out · Fin (baja)", "type": "main", "index": 0 }]] },
+    "Opt-out · Reconsentir": { "main": [[{ "node": "Buffer · Leer", "type": "main", "index": 0 }]] },
     "Buffer · Leer": { "main": [[{ "node": "Buffer · Componer", "type": "main", "index": 0 }]] },
     "Buffer · Componer": { "main": [[{ "node": "Buffer · Guardar", "type": "main", "index": 0 }]] },
     "Buffer · Guardar": { "main": [[{ "node": "Buffer · Contador", "type": "main", "index": 0 }]] },
