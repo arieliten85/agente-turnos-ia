@@ -314,3 +314,17 @@ function formatoMsg(campo, valor, format) {
       return `El valor "${valor}" en "${campo}" no cumple el formato ${format}.`;
   }
 }
+
+// ============================================================================
+// DEUDA CONOCIDA — hay una segunda copia de esta lógica.
+// ----------------------------------------------------------------------------
+// Los nodos Code de n8n no pueden importar archivos del repo, así que
+// `validateToolCall` y sus helpers (matchesType/tipoMsg/matchesFormat/
+// formatoMsg/validateValue) están portados INLINE en el nodo "Validar params"
+// de blueprints/flows/flow-agent.json. Ese es el que corre en producción; este
+// archivo es el que testean tests/unit/17-20.
+//
+// Si tocás la lógica de validación acá, replicalo en ese nodo (y viceversa).
+// Hay un test de paridad manual: comparar la salida de ambas implementaciones
+// contra los mismos casos de tests 18-20.
+// ============================================================================
