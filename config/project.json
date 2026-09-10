@@ -1,12 +1,10 @@
 {
   "$comment": "Estado de UNA instalación del agente de turnos. Lo genera setup.js al crear el proyecto y lo actualizan las operaciones 'editar', 'probar' y 'promover'. Los secretos NO van acá: viven en .env y en las credenciales de n8n. Este archivo sí se versiona en Git.",
-
   "template_version": "1.0.0",
   "environment": "demo",
   "deployment_mode": "single",
-  "created_at": null,
-  "updated_at": null,
-
+  "created_at": "2026-09-09T21:15:14.668Z",
+  "updated_at": "2026-09-09T21:15:21.429Z",
   "brand": {
     "name": "",
     "business_name": "",
@@ -16,44 +14,52 @@
     "contact_phone": "",
     "handoff_phone": ""
   },
-
   "policy": {
     "cancellation_hours": 24,
     "reminder_hours": 24,
     "buffer_seconds": 2.5,
     "slot_granularity_min": 15,
-    "opt_out_keywords": ["BAJA", "STOP", "NO MOLESTAR"]
+    "opt_out_keywords": [
+      "BAJA",
+      "STOP",
+      "NO MOLESTAR"
+    ]
   },
-
   "tone": {
     "custom": null
   },
-
   "model": {
     "provider": "gemini",
     "name": "gemini-2.0-flash"
   },
-
   "services": [
-    { "name": "", "duration_minutes": 0, "price": 0 }
+    {
+      "name": "",
+      "duration_minutes": 0,
+      "price": 0
+    }
   ],
-
   "professionals": [
     {
       "name": "",
       "services": [],
       "schedule": {
-        "mon": [], "tue": [], "wed": [], "thu": [], "fri": [], "sat": [], "sun": []
+        "mon": [],
+        "tue": [],
+        "wed": [],
+        "thu": [],
+        "fri": [],
+        "sat": [],
+        "sun": []
       }
     }
   ],
-
   "whatsapp": {
     "api_base": "https://graph.facebook.com",
     "graph_version": "v21.0",
     "phone_number_id": "",
     "waba_id": "",
-    "verify_token": "",
+    "verify_token": "agente-consulta-ia",
     "webhook_path": "wa-turnos",
     "template_lang": "es_AR",
     "templates": {
@@ -63,27 +69,25 @@
       "reengagement": "handoff_reengagement"
     },
     "templates_status": {
-      "reminder": "pending",
-      "cancellation": "pending",
-      "waitlist": "pending",
-      "reengagement": "pending"
+      "reminder": "dictated",
+      "cancellation": "dictated",
+      "waitlist": "dictated",
+      "reengagement": "dictated"
     }
   },
-
   "supabase": {
     "project_ref": "",
     "url": "",
     "region": "sa-east-1"
   },
-
   "n8n": {
     "base_url": "http://localhost:5678",
     "workflow_ids": {
-      "webhook": "",
-      "agent": "",
-      "reminder": "",
-      "handoff": "",
-      "recovery": ""
+      "webhook": "QwVWpRgatxNFxwgr",
+      "agent": "3wxbZJ2Dr1CHJO3Y",
+      "reminder": "F54OCcSLeBGpmSDy",
+      "handoff": "a9vIsUBOxtAh4uGP",
+      "recovery": "vRQ8I19BCmv8hjDU"
     },
     "credential_names": {
       "postgres": "turnos · Supabase",
@@ -92,34 +96,29 @@
       "model": "turnos · Modelo"
     }
   },
-
   "redis": {
     "prefix": "turnos"
   },
-
   "runtime": {
     "buffer_ttl_seconds": 60,
     "recovery_stale_seconds": 30,
     "reminder_type": "24h"
   },
-
   "tunnel": {
     "provider": "cloudflare",
     "hostname": ""
   },
-
   "mcps": {
     "supabase": "required",
     "n8n": "optional",
     "filesystem": "optional"
   },
-
   "setup": {
     "mcps_registered": [],
     "schema_applied": false,
     "seed_loaded": false,
-    "flows_imported": false,
-    "webhook_active": false,
-    "last_connection_test": null
+    "flows_imported": true,
+    "webhook_active": true,
+    "last_connection_test": "2026-09-09T21:15:21.429Z"
   }
 }
