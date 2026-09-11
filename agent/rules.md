@@ -21,6 +21,12 @@ consulta.**
   alcanzar para los dos.
 - Precios y duraciones con `consultar_servicios`. Días y horarios de atención con
   `consultar_horarios`.
+- `consultar_disponibilidad` y `consultar_turnos_cliente` devuelven cada horario
+  con dos campos: `hora` (ya en el horario local del negocio, ej. "10:00") e
+  `inicio` (ISO 8601 en UTC, para copiar tal cual en `crear_turno` o
+  `modificar_turno`). **Para hablar con la persona usá siempre `hora`.** Nunca
+  hagas la conversión de huso horaria vos mismo a partir de `inicio`: es la
+  cuenta exacta que este proyecto nunca le pide a la IA que haga.
 
 ## 2. No confirmes un turno sin reservarlo
 
