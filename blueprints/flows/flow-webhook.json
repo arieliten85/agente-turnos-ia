@@ -180,12 +180,12 @@
       "parameters": {
         "operation": "executeQuery",
         "query": "SELECT b.opt_out_keywords AS keywords, COALESCE(c.opted_out, false) AS ya_baja\nFROM business b\nLEFT JOIN clients c ON c.phone = $1\nLIMIT 1;",
-        "options": { "queryReplacement": "={{ $('Extraer mensaje').item.json.waId }}" }
+        "options": { "queryReplacement": "={{ [$('Extraer mensaje').item.json.waId] }}" }
       },
       "id": "5f1b0a10-1a11-4c22-9d33-aa0000000001",
       "name": "Opt-out · Datos",
       "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.4,
+      "typeVersion": 2.6,
       "position": [1280, 480],
       "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
     },
@@ -225,12 +225,12 @@
       "parameters": {
         "operation": "executeQuery",
         "query": "WITH upd AS (\n  INSERT INTO clients (phone, opted_out, opted_out_at)\n  VALUES ($1, true, now())\n  ON CONFLICT (phone) DO UPDATE SET opted_out = true, opted_out_at = now()\n  RETURNING 1\n)\nSELECT 1 AS ok;",
-        "options": { "queryReplacement": "={{ $('Opt-out · Evaluar').item.json.waId }}" }
+        "options": { "queryReplacement": "={{ [$('Opt-out · Evaluar').item.json.waId] }}" }
       },
       "id": "5f1b0a10-1a11-4c22-9d33-aa0000000005",
       "name": "Opt-out · Marcar baja",
       "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.4,
+      "typeVersion": 2.6,
       "position": [1940, 400],
       "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
     },
@@ -265,12 +265,12 @@
       "parameters": {
         "operation": "executeQuery",
         "query": "WITH upd AS (\n  UPDATE clients SET opted_out = false, opted_out_at = NULL\n  WHERE phone = $1 AND opted_out = true\n  RETURNING 1\n)\nSELECT 1 AS ok;",
-        "options": { "queryReplacement": "={{ $('Extraer mensaje').item.json.waId }}" }
+        "options": { "queryReplacement": "={{ [$('Extraer mensaje').item.json.waId] }}" }
       },
       "id": "5f1b0a10-1a11-4c22-9d33-aa0000000008",
       "name": "Opt-out · Reconsentir",
       "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.4,
+      "typeVersion": 2.6,
       "position": [1940, 560],
       "credentials": { "postgres": { "id": "__CRED_POSTGRES__", "name": "__CRED_POSTGRES__" } }
     },
