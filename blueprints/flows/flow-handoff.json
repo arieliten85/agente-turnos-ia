@@ -12,7 +12,7 @@
   "tags": [],
   "nodes": [
     {
-      "parameters": {},
+      "parameters": { "workflowInputs": { "values": [ { "name": "mode", "type": "string" }, { "name": "waId", "type": "string" }, { "name": "conversationId", "type": "string" }, { "name": "razon", "type": "string" }, { "name": "categoria", "type": "string" }, { "name": "lastClientMessage", "type": "string" }, { "name": "ownerText", "type": "string" } ] } },
       "id": "9f14fb7a-9fa0-4903-9aba-070c7fc49bc7",
       "name": "Disparado por agente/webhook",
       "type": "n8n-nodes-base.executeWorkflowTrigger",

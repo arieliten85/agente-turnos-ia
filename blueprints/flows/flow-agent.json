@@ -12,7 +12,7 @@
   "tags": [],
   "nodes": [
     {
-      "parameters": {},
+      "parameters": { "workflowInputs": { "values": [ { "name": "waId", "type": "string" }, { "name": "via", "type": "string" } ] } },
       "id": "26e45de4-98e4-4e9d-8aea-909967c6fed2",
       "name": "Disparado por webhook/recovery",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
