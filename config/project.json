@@ -4,7 +4,7 @@
   "environment": "demo",
   "deployment_mode": "single",
   "created_at": "2026-09-09T21:15:14.668Z",
-  "updated_at": "2026-09-09T21:15:21.429Z",
+  "updated_at": "2026-09-11T14:36:53.111Z",
   "brand": {
     "name": "",
     "business_name": "",
@@ -88,7 +88,7 @@
       "reminder": "F54OCcSLeBGpmSDy",
       "handoff": "a9vIsUBOxtAh4uGP",
       "recovery": "vRQ8I19BCmv8hjDU",
-      "cleanup": ""
+      "cleanup": "k2W7gnMNKumsX5S1"
     },
     "credential_names": {
       "postgres": "turnos · Supabase",
