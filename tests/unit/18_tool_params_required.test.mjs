@@ -42,8 +42,8 @@ export default function () {
   assert(r.ok === false, 'crear_turno vacío falla');
   const camposFaltantes = r.errores.map(e => e.campo).sort();
   assert(
-    ['cliente', 'hora_inicio', 'profesional', 'servicios'].every(c => camposFaltantes.includes(c)),
-    'crear_turno reporta los 4 required faltantes',
+    ['cliente', 'dia_semana', 'hora_inicio', 'profesional', 'servicios'].every(c => camposFaltantes.includes(c)),
+    'crear_turno reporta los 5 required faltantes',
   );
 
   // Parámetro no permitido

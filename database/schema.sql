@@ -399,6 +399,47 @@ CREATE TABLE schema_migrations (
 
 
 -- ----------------------------------------------------------------------------
+-- spanish_weekday · spanish_date_label
+-- ----------------------------------------------------------------------------
+-- Nombre del día / fecha legible en español para un timestamp YA convertido
+-- al huso del negocio (parámetro `timestamp` sin tz, no `timestamptz`: el
+-- llamador convierte primero con `AT TIME ZONE <huso>`; si la función tomara
+-- `timestamptz`, pasarle ese resultado haría que Postgres lo reinterprete en
+-- el huso de la SESIÓN al convertirlo de vuelta — un round-trip que corre la
+-- hora en silencio). El modelo repite estos strings; nunca arma la fecha por
+-- su cuenta.
+
+CREATE OR REPLACE FUNCTION spanish_weekday(p_local_ts timestamp)
+RETURNS text
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT (ARRAY['domingo','lunes','martes','miércoles','jueves','viernes','sábado'])[EXTRACT(DOW FROM p_local_ts)::int + 1];
+$$;
+
+COMMENT ON FUNCTION spanish_weekday IS
+'Nombre del día de la semana en español para un timestamp ya convertido al
+huso del negocio. "domingo" (0) a "sábado" (6), igual que EXTRACT(DOW).';
+
+
+CREATE OR REPLACE FUNCTION spanish_date_label(p_local_ts timestamp, p_include_year boolean DEFAULT false)
+RETURNS text
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT spanish_weekday(p_local_ts)
+    || ' ' || EXTRACT(DAY FROM p_local_ts)::int || ' de ' ||
+    (ARRAY['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'])[EXTRACT(MONTH FROM p_local_ts)::int]
+    || CASE WHEN p_include_year THEN ' de ' || EXTRACT(YEAR FROM p_local_ts)::int ELSE '' END;
+$$;
+
+COMMENT ON FUNCTION spanish_date_label IS
+'Fecha legible en español ("lunes 14 de septiembre", o con p_include_year
+"lunes 14 de septiembre de 2026") para un timestamp ya convertido al huso del
+negocio.';
+
+
+-- ----------------------------------------------------------------------------
 -- slot_fits_schedule
 -- ----------------------------------------------------------------------------
 -- Responde si un rango [p_starts_at, p_ends_at) cae entero dentro del horario
@@ -694,7 +735,8 @@ CREATE OR REPLACE FUNCTION book_appointment(
   p_service_ids     uuid[],
   p_starts_at       timestamptz,
   p_notes           text DEFAULT NULL,
-  p_force           boolean DEFAULT false
+  p_force           boolean DEFAULT false,
+  p_expected_dow    text DEFAULT NULL
 )
 RETURNS uuid
 LANGUAGE plpgsql
@@ -708,6 +750,8 @@ DECLARE
   v_window         record;
   v_requested      integer;
   v_found          integer;
+  v_tz             text;
+  v_dia_real       text;
 BEGIN
   -- Validaciones básicas
   IF p_service_ids IS NULL OR array_length(p_service_ids, 1) IS NULL THEN
@@ -745,6 +789,19 @@ BEGIN
 
   v_ends_at := p_starts_at + (v_total_duration || ' minutes')::interval;
 
+  -- T0: si el llamador mandó un día de semana esperado, tiene que coincidir
+  -- con el día real de p_starts_at. Backstop de base para "viernes 14" cuando
+  -- el 14 cae lunes — el prompt/contexto ya debería haber frenado esto antes,
+  -- esta es la última línea de defensa.
+  IF p_expected_dow IS NOT NULL AND btrim(p_expected_dow) <> '' THEN
+    SELECT timezone INTO v_tz FROM business LIMIT 1;
+    v_dia_real := spanish_weekday(p_starts_at AT TIME ZONE COALESCE(v_tz, 'America/Argentina/Buenos_Aires'));
+    IF translate(lower(btrim(p_expected_dow)), 'áéíóú', 'aeiou') IS DISTINCT FROM translate(v_dia_real, 'áéíóú', 'aeiou') THEN
+      RAISE EXCEPTION 'El día de la semana no coincide: pediste % pero esa fecha es %. Confirmá cuál vale antes de reservar.',
+        p_expected_dow, v_dia_real;
+    END IF;
+  END IF;
+
   -- Validar que el turno cae dentro del horario del profesional y no pisa
   -- ninguna excepción. p_force lo saltea (autorización humana explícita del
   -- handoff); el agente nunca lo manda en true.
@@ -778,10 +835,11 @@ $$;
 
 COMMENT ON FUNCTION book_appointment IS
 'Crea un turno. Valida que todos los servicios existan y estén activos (nunca
-acorta el turno en silencio), que el profesional pueda hacerlos y que el rango
-entre en el horario (slot_fits_schedule). Confía en la restricción de exclusión
-de appointments para atomicidad. p_force es de uso humano (handoff); el agente
-nunca lo manda en true. En v1 todos los servicios del bloque van con el mismo
+acorta el turno en silencio), que el profesional pueda hacerlos, que el
+p_expected_dow (si se manda) coincida con el día real de p_starts_at, y que el
+rango entre en el horario (slot_fits_schedule). Confía en la restricción de
+exclusión de appointments para atomicidad. p_force es de uso humano (handoff);
+el agente nunca lo manda en true. En v1 todos los servicios del bloque van con el mismo
 profesional.';
 
 

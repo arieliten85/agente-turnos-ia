@@ -61,7 +61,7 @@
     },
     {
       "name": "crear_turno",
-      "description": "Reserva un turno. Solo llamala cuando ya tenés fecha y hora concretas confirmadas por la clienta y verificadas con consultar_disponibilidad. Nunca confirmes un turno sin haber llamado a esta herramienta. 'hora_inicio' tiene que ser exactamente uno de los valores que devolvió consultar_disponibilidad.",
+      "description": "Reserva un turno. Solo llamala cuando ya tenés fecha y hora concretas confirmadas por la clienta y verificadas con consultar_disponibilidad. Nunca confirmes un turno sin haber llamado a esta herramienta. 'hora_inicio' tiene que ser exactamente uno de los valores que devolvió consultar_disponibilidad. 'dia_semana' es un chequeo de seguridad: si no coincide con el día real de 'hora_inicio', la herramienta rechaza la reserva en vez de agendar un día equivocado.",
       "backend": { "kind": "sql_function", "target": "book_appointment" },
       "parameters": {
         "type": "object",
@@ -87,9 +87,14 @@
             "type": "string",
             "format": "date-time",
             "description": "Inicio del turno en ISO 8601 con offset, copiado de consultar_disponibilidad."
+          },
+          "dia_semana": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Día de la semana en minúscula ('lunes', 'martes', ...) del turno que estás por reservar, el mismo que ya le confirmaste a la persona. Copiá el día de 'fecha_legible' de consultar_disponibilidad, nunca lo calcules distinto."
           }
         },
-        "required": ["cliente", "servicios", "profesional", "hora_inicio"]
+        "required": ["cliente", "servicios", "profesional", "hora_inicio", "dia_semana"]
       }
     },
     {

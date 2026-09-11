@@ -20,6 +20,7 @@ export default function () {
       servicios: ['Corte', 'Color'],
       profesional: 'Carla',
       hora_inicio: HORA,
+      dia_semana: 'sábado',
     },
     consultar_turnos_cliente: { cliente: TEL },
     modificar_turno: { turno_id: UUID, nueva_hora: HORA },
