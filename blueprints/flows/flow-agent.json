@@ -67,7 +67,7 @@
     {
       "parameters": {
         "operation": "set",
-        "key": "=__REDIS_PREFIX__:lock:{{ $('Disparado por webhook/recovery').item.json.waId }}",
+        "key": "=__REDIS_PREFIX__:lock:{{ $('Disparado por webhook/recovery').first().json.waId }}",
         "value": "={{ $execution.id }}",
         "keyType": "string",
         "expire": true,
@@ -86,7 +86,7 @@
       "parameters": {
         "operation": "get",
         "propertyName": "bufferRaw",
-        "key": "=__REDIS_PREFIX__:buffer:{{ $('Disparado por webhook/recovery').item.json.waId }}",
+        "key": "=__REDIS_PREFIX__:buffer:{{ $('Disparado por webhook/recovery').first().json.waId }}",
         "keyType": "string",
         "options": {}
       },
@@ -129,7 +129,7 @@
       "parameters": {
         "operation": "executeQuery",
         "query": "WITH cli AS (\n  INSERT INTO clients (phone) VALUES ($1)\n  ON CONFLICT (phone) DO UPDATE SET updated_at = now()\n  RETURNING id, phone, name, opted_out, consent_shown_at\n),\nconv AS (\n  INSERT INTO conversations (client_id, phone)\n  SELECT id, phone FROM cli\n  ON CONFLICT (client_id) DO UPDATE SET last_message_at = now()\n  RETURNING id, state, summary\n),\nhist AS (\n  SELECT json_agg(x ORDER BY x.created_at) AS items FROM (\n    SELECT m.direction, m.content, m.created_at\n    FROM messages m JOIN conv ON conv.id = m.conversation_id\n    ORDER BY m.created_at DESC LIMIT 12\n  ) x\n),\nbiz AS (SELECT to_jsonb(b) AS b FROM business b LIMIT 1),\nsvc AS (\n  SELECT json_agg(json_build_object('nombre', s.name, 'duracion_min', s.duration_minutes, 'precio', s.price) ORDER BY s.name) AS items\n  FROM services s WHERE s.active\n),\npro AS (\n  SELECT json_agg(json_build_object(\n    'nombre', p.name,\n    'servicios', (SELECT json_agg(s2.name) FROM professional_services ps JOIN services s2 ON s2.id = ps.service_id WHERE ps.professional_id = p.id)\n  ) ORDER BY p.name) AS items\n  FROM professionals p WHERE p.active\n)\nSELECT\n  (SELECT id FROM cli) AS client_id,\n  (SELECT phone FROM cli) AS phone,\n  (SELECT name FROM cli) AS client_name,\n  (SELECT opted_out FROM cli) AS opted_out,\n  (SELECT consent_shown_at FROM cli) AS consent_shown_at,\n  (SELECT id FROM conv) AS conversation_id,\n  (SELECT state FROM conv) AS conversation_state,\n  (SELECT summary FROM conv) AS conversation_summary,\n  (SELECT items FROM hist) AS history,\n  (SELECT b FROM biz) AS business,\n  (SELECT items FROM svc) AS services,\n  (SELECT items FROM pro) AS professionals;",
-        "options": { "queryReplacement": "={{ [$('Disparado por webhook/recovery').item.json.waId] }}" }
+        "options": { "queryReplacement": "={{ [$('Disparado por webhook/recovery').first().json.waId] }}" }
       },
       "id": "b4a765f0-4db6-4978-842f-e0c5fb8c4625",
       "name": "Cargar contexto",
@@ -176,7 +176,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $json;\nconst waId = $('Disparado por webhook/recovery').item.json.waId;\nlet buffer = [];\ntry { buffer = JSON.parse($('Leer buffer').item.json.bufferRaw || '[]'); } catch (e) {}\n\nconst identity = __AGENT_IDENTITY__;\nconst rules = __AGENT_RULES__;\nconst tools = __AGENT_TOOLS__;\n\nconst capa3 = [\n  '## Datos del negocio (capa 3)',\n  'Negocio: ' + JSON.stringify(ctx.business || {}),\n  'Servicios: ' + JSON.stringify(ctx.services || []),\n  'Profesionales: ' + JSON.stringify(ctx.professionals || []),\n  'Telefono de la clienta (para las herramientas): ' + waId,\n  'Consentimiento ya mostrado: ' + (ctx.consent_shown_at ? 'si' : 'no'),\n  ctx.conversation_summary ? ('Resumen de la conversacion: ' + ctx.conversation_summary) : ''\n].filter(Boolean).join('\\n');\n\nconst system = identity + '\\n\\n' + rules + '\\n\\n' + capa3;\n\nconst history = Array.isArray(ctx.history) ? ctx.history : [];\nconst messages = history.map(h => ({\n  role: h.direction === 'outbound' ? 'assistant' : 'user',\n  content: h.content || ''\n}));\nmessages.push({ role: 'user', content: buffer.map(m => m.text).filter(Boolean).join('\\n') || '(mensaje sin texto)' });\n\nreturn [{ json: { system, messages, tools, ctx, waId, buffer, _t0: Date.now() } }];"
+        "jsCode": "const ctx = $json;\nconst waId = $('Disparado por webhook/recovery').first().json.waId;\nlet buffer = [];\ntry { buffer = JSON.parse($('Leer buffer').item.json.bufferRaw || '[]'); } catch (e) {}\n\nconst identity = __AGENT_IDENTITY__;\nconst rules = __AGENT_RULES__;\nconst tools = __AGENT_TOOLS__;\n\nconst capa3 = [\n  '## Datos del negocio (capa 3)',\n  'Negocio: ' + JSON.stringify(ctx.business || {}),\n  'Servicios: ' + JSON.stringify(ctx.services || []),\n  'Profesionales: ' + JSON.stringify(ctx.professionals || []),\n  'Telefono de la clienta (para las herramientas): ' + waId,\n  'Consentimiento ya mostrado: ' + (ctx.consent_shown_at ? 'si' : 'no'),\n  ctx.conversation_summary ? ('Resumen de la conversacion: ' + ctx.conversation_summary) : ''\n].filter(Boolean).join('\\n');\n\nconst system = identity + '\\n\\n' + rules + '\\n\\n' + capa3;\n\nconst history = Array.isArray(ctx.history) ? ctx.history : [];\nconst messages = history.map(h => ({\n  role: h.direction === 'outbound' ? 'assistant' : 'user',\n  content: h.content || ''\n}));\nmessages.push({ role: 'user', content: buffer.map(m => m.text).filter(Boolean).join('\\n') || '(mensaje sin texto)' });\n\nreturn [{ json: { system, messages, tools, ctx, waId, buffer, _t0: Date.now() } }];"
       },
       "id": "8cf84895-5346-4fd7-bddc-981db2d9e67c",
       "name": "Construir contexto modelo",
@@ -389,7 +389,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const r = $json;\nconst ctx = $('Construir contexto modelo').item.json.ctx || {};\nconst waId = $('Disparado por webhook/recovery').item.json.waId;\nconst _vacio = !(r.finalText && String(r.finalText).trim());\nlet text = _vacio ? 'Perdón, se me complicó procesar esto. Ya te contacta alguien del local.' : r.finalText;\nif (!ctx.consent_shown_at) {\n  text = 'Al continuar aceptás recibir mensajes automáticos del local. Escribí BAJA en cualquier momento para dejar de recibirlos.\\n\\n' + text;\n}\nconst waPayload = { messaging_product: 'whatsapp', to: waId, type: 'text', text: { body: text } };\nreturn [{ json: {\n  waPayload,\n  conversationId: ctx.conversation_id,\n  clientId: ctx.client_id,\n  needsConsent: !ctx.consent_shown_at,\n  handoff: !!r.handoff || _vacio, razon: r.razon || (_vacio ? 'respuesta vacía del modelo' : null), categoria: r.categoria || (_vacio ? 'fuera_de_alcance' : null),\n  finalText: text, waId\n} }];"
+        "jsCode": "const r = $json;\nconst ctx = $('Construir contexto modelo').first().json.ctx || {};\nconst waId = $('Disparado por webhook/recovery').first().json.waId;\nconst _vacio = !(r.finalText && String(r.finalText).trim());\nlet text = _vacio ? 'Perdón, se me complicó procesar esto. Ya te contacta alguien del local.' : r.finalText;\nif (!ctx.consent_shown_at) {\n  text = 'Al continuar aceptás recibir mensajes automáticos del local. Escribí BAJA en cualquier momento para dejar de recibirlos.\\n\\n' + text;\n}\nconst waPayload = { messaging_product: 'whatsapp', to: waId, type: 'text', text: { body: text } };\nreturn [{ json: {\n  waPayload,\n  conversationId: ctx.conversation_id,\n  clientId: ctx.client_id,\n  needsConsent: !ctx.consent_shown_at,\n  handoff: !!r.handoff || _vacio, razon: r.razon || (_vacio ? 'respuesta vacía del modelo' : null), categoria: r.categoria || (_vacio ? 'fuera_de_alcance' : null),\n  finalText: text, waId\n} }];"
       },
       "id": "61ee8960-4f98-48c7-b293-2ad16d71dcb3",
       "name": "Construir waPayload",
@@ -421,7 +421,7 @@
         "operation": "executeQuery",
         "query": "UPDATE conversations SET last_outbound_at = now() WHERE id = $1;\nUPDATE clients SET consent_shown_at = now() WHERE id = $2 AND consent_shown_at IS NULL;\nINSERT INTO messages (conversation_id, direction, content)\nSELECT $1::uuid, 'inbound', value->>'text' FROM jsonb_array_elements($3::jsonb) AS value\nUNION ALL SELECT $1::uuid, 'outbound', $4;",
         "options": {
-          "queryReplacement": "={{ [$('Construir waPayload').item.json.conversationId, $('Construir waPayload').item.json.clientId, JSON.stringify($('Construir contexto modelo').item.json.buffer || []), $('Construir waPayload').item.json.finalText] }}"
+          "queryReplacement": "={{ [$('Construir waPayload').item.json.conversationId, $('Construir waPayload').item.json.clientId, JSON.stringify($('Construir contexto modelo').first().json.buffer || []), $('Construir waPayload').item.json.finalText] }}"
         }
       },
       "id": "4cc4c209-a6b0-4451-8ae7-c45034472a45",
@@ -437,7 +437,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO runs (conversation_id, inbound_messages, model_used, tokens_in, tokens_out, tools_called, response_text, total_latency_ms, error)\nVALUES ($1::uuid, $2::jsonb, $3, $4::int, $5::int, $6::jsonb, $7, $8::int, $9);",
         "options": {
-          "queryReplacement": "={{ [\n  $('Construir waPayload').item.json.conversationId,\n  JSON.stringify($('Construir contexto modelo').item.json.buffer || []),\n  '__MODEL_PROVIDER__/__MODEL_NAME__',\n  $('Modelo · Normalizar').isExecuted ? (($('Modelo · Normalizar').item.json.usage || {}).in || 0) : 0,\n  $('Modelo · Normalizar').isExecuted ? (($('Modelo · Normalizar').item.json.usage || {}).out || 0) : 0,\n  JSON.stringify($('Modelo · Normalizar').isExecuted ? ($('Modelo · Normalizar').item.json.toolCalls || []) : []),\n  $('Construir waPayload').item.json.finalText,\n  Date.now() - $('Construir contexto modelo').item.json._t0,\n  $('Construir waPayload').item.json.handoff ? 'handoff' : ($('Tool · Componer rechazo').isExecuted ? 'params_invalidos' : null)\n] }}"
+          "queryReplacement": "={{ [\n  $('Construir waPayload').item.json.conversationId,\n  JSON.stringify($('Construir contexto modelo').first().json.buffer || []),\n  '__MODEL_PROVIDER__/__MODEL_NAME__',\n  $('Modelo · Normalizar').isExecuted ? (($('Modelo · Normalizar').first().json.usage || {}).in || 0) : 0,\n  $('Modelo · Normalizar').isExecuted ? (($('Modelo · Normalizar').first().json.usage || {}).out || 0) : 0,\n  JSON.stringify($('Modelo · Normalizar').isExecuted ? ($('Modelo · Normalizar').first().json.toolCalls || []) : []),\n  $('Construir waPayload').item.json.finalText,\n  Date.now() - $('Construir contexto modelo').first().json._t0,\n  $('Construir waPayload').item.json.handoff ? 'handoff' : ($('Tool · Componer rechazo').isExecuted ? 'params_invalidos' : null)\n] }}"
         }
       },
       "id": "7860c390-b439-4444-9ebe-947ad8eee6ae",
@@ -477,11 +477,11 @@
           "mappingMode": "defineBelow",
           "value": {
             "mode": "open",
-            "waId": "={{ $('Disparado por webhook/recovery').item.json.waId }}",
+            "waId": "={{ $('Disparado por webhook/recovery').first().json.waId }}",
             "conversationId": "={{ $('Construir waPayload').item.json.conversationId }}",
             "razon": "={{ $('Construir waPayload').item.json.razon }}",
             "categoria": "={{ $('Construir waPayload').item.json.categoria }}",
-            "lastClientMessage": "={{ ($('Construir contexto modelo').item.json.buffer || []).map(m => m.text).join(' ') }}"
+            "lastClientMessage": "={{ ($('Construir contexto modelo').first().json.buffer || []).map(m => m.text).join(' ') }}"
           }
         },
         "options": { "waitForSubWorkflow": false }
@@ -495,7 +495,7 @@
     {
       "parameters": {
         "operation": "delete",
-        "key": "=__REDIS_PREFIX__:buffer:{{ $('Disparado por webhook/recovery').item.json.waId }}",
+        "key": "=__REDIS_PREFIX__:buffer:{{ $('Disparado por webhook/recovery').first().json.waId }}",
         "options": {}
       },
       "id": "315a499f-6bcd-486a-a3a0-d5e4afe65a70",
@@ -508,7 +508,7 @@
     {
       "parameters": {
         "operation": "delete",
-        "key": "=__REDIS_PREFIX__:count:{{ $('Disparado por webhook/recovery').item.json.waId }}",
+        "key": "=__REDIS_PREFIX__:count:{{ $('Disparado por webhook/recovery').first().json.waId }}",
         "options": {}
       },
       "id": "42f31f40-d728-4ec6-bbf6-a7426ac2f94c",
@@ -521,7 +521,7 @@
     {
       "parameters": {
         "operation": "delete",
-        "key": "=__REDIS_PREFIX__:pending:{{ $('Disparado por webhook/recovery').item.json.waId }}",
+        "key": "=__REDIS_PREFIX__:pending:{{ $('Disparado por webhook/recovery').first().json.waId }}",
         "options": {}
       },
       "id": "44c5e43e-fb68-44b1-944a-09c9d0dac971",
@@ -534,7 +534,7 @@
     {
       "parameters": {
         "operation": "delete",
-        "key": "=__REDIS_PREFIX__:lock:{{ $('Disparado por webhook/recovery').item.json.waId }}",
+        "key": "=__REDIS_PREFIX__:lock:{{ $('Disparado por webhook/recovery').first().json.waId }}",
         "options": {}
       },
       "id": "9ae9ee97-75a2-433c-9433-e80a89763ca5",
