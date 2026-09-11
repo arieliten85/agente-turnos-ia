@@ -307,6 +307,14 @@ COMMENT ON FUNCTION get_availability(date, uuid, uuid) IS
 -- p_force: uso HUMANO. El dueño, por vía handoff, puede meter un turno fuera de
 -- horario. El agente NUNCA lo manda en true — es un parámetro de escape manual,
 -- igual que el de cancel_appointment.
+--
+-- Ojo: la firma cambia de 5 a 6 parámetros. CREATE OR REPLACE no pisa una
+-- función con distinta lista de parámetros — crea una SEGUNDA sobrecarga y dos
+-- book_appointment ambiguos terminan rompiendo cualquier llamada con 4
+-- argumentos posicionales (las de los blueprints) y el COMMENT ON FUNCTION de
+-- abajo. Hay que borrar la firma vieja antes de crear la nueva.
+
+DROP FUNCTION IF EXISTS book_appointment(uuid, uuid, uuid[], timestamptz, text);
 
 CREATE OR REPLACE FUNCTION book_appointment(
   p_client_id       uuid,
