@@ -38,8 +38,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // ---- Args y config -----------------------------------------------------------
 
 const args = {
+  suite: 'brief',
   runs: 5,
   case: null,
+  only: null,
   list: false,
   json: false,
   gapMs: 400,
@@ -53,8 +55,10 @@ const args = {
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];
   const next = () => process.argv[++i];
-  if (a === '--runs') args.runs = Number(next());
+  if (a === '--suite') args.suite = next();
+  else if (a === '--runs') args.runs = Number(next());
   else if (a === '--case') args.case = next();
+  else if (a === '--only') args.only = next().split(',').map(s => s.trim());
   else if (a === '--list') args.list = true;
   else if (a === '--json') args.json = true;
   else if (a === '--no-reset') args.noReset = true;
@@ -66,6 +70,12 @@ for (let i = 2; i < process.argv.length; i++) {
   else if (a === '--config') args.config = next();
   else if (a === '--help' || a === '-h') { printHelp(); process.exit(0); }
   else { console.error(`Argumento desconocido: ${a}`); process.exit(2); }
+}
+
+if (args.suite === 'ajustes') {
+  const { main: mainAjustes } = await import('./test-eval-ajustes.js');
+  const exitCode = await mainAjustes(args);
+  process.exit(exitCode);
 }
 
 if (existsSync(args.config)) {
@@ -85,16 +95,21 @@ if (existsSync(args.config)) {
 function printHelp() {
   console.log(`test-eval.js — evals conversacionales
 
+  --suite brief|ajustes    brief = 16 casos del contrato original (default,
+                           vía simulator.js). ajustes = 41 casos T2-T6 de
+                           PLAN-DE-AJUSTES.md, verificados contra la base y
+                           los logs de ejecución de n8n, no por texto.
   --runs N                 corridas por caso (default 5)
-  --case <id|texto>        filtra casos
+  --case <id|texto>        filtra casos (suite brief)
+  --only <id,id,...>       filtra casos por id, ej. T2-1,T4-4 (suite ajustes)
   --list                   lista casos y sale
   --json                   salida JSON
-  --threshold-critical P   umbral casos críticos (default 90)
-  --threshold-ambiguous P  umbral casos ambiguos (default 75)
+  --threshold-critical P   umbral casos críticos (default 90, suite brief)
+  --threshold-ambiguous P  umbral casos ambiguos (default 75, suite brief)
   --gap-ms N               pausa entre mensajes de un burst (default 400)
   --timeout-ms N           espera máxima de respuesta (default 20000)
-  --from <telefono>        número de la clienta de prueba
-  --no-reset               no limpiar la conversación entre corridas
+  --from <telefono>        número de la clienta de prueba (suite brief)
+  --no-reset               no limpiar la conversación entre corridas (suite brief)
   --config <path>          archivo de config (default scripts/test-eval.config.json)`);
 }
 
