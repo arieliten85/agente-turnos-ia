@@ -280,8 +280,11 @@ export function buildCases(t) {
       turns: () => ['qué turnos tengo?'],
       check: async (ctx) => {
         const { label } = horaPorRep('2026-09-29T09:00:00-03:00', ctx.rep);
-        const propio = hasN(ctx.todasTexto, 'limpieza') && includesHora(ctx.todasTexto, label);
-        const ajeno = hasN(ctx.todasTexto, 'ortodoncia');
+        // No exige el nombre del servicio: el modelo a veces confirma con
+        // fecha+hora+profesional sin repetir "Limpieza" — lo que identifica
+        // ESTE turno (contra el ajeno) es el profesional + el horario.
+        const propio = hasN(ctx.todasTexto, 'duarte') && includesHora(ctx.todasTexto, label);
+        const ajeno = hasN(ctx.todasTexto, 'ortodoncia', 'rossi');
         return { ok: propio && !ajeno, motivo: !propio ? 'no mostró su propio turno' : 'mostró datos de un turno ajeno' };
       },
     },
