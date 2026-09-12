@@ -13,10 +13,10 @@
   "nodes": [
     {
       "parameters": {
-        "rule": { "interval": [{ "field": "minutes", "minutesInterval": 5 }] }
+        "rule": { "interval": [{ "field": "minutes", "minutesInterval": 2 }] }
       },
       "id": "2e3f4a5b-6c7d-4e8f-9a0b-1c2d3e4f5a6b",
-      "name": "Cron 5 min",
+      "name": "Cron 2 min",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [0, 0]
@@ -124,7 +124,7 @@
     }
   ],
   "connections": {
-    "Cron 5 min": { "main": [[{ "node": "Buscar pendientes", "type": "main", "index": 0 }]] },
+    "Cron 2 min": { "main": [[{ "node": "Buscar pendientes", "type": "main", "index": 0 }]] },
     "Buscar pendientes": { "main": [[{ "node": "Separar claves", "type": "main", "index": 0 }]] },
     "Separar claves": { "main": [[{ "node": "Leer ts de actividad", "type": "main", "index": 0 }]] },
     "Leer ts de actividad": { "main": [[{ "node": "Leer lock", "type": "main", "index": 0 }]] },

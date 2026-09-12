@@ -35,6 +35,13 @@ services:
       - N8N_DIAGNOSTICS_ENABLED=false
       - N8N_PERSONALIZATION_ENABLED=false
       - N8N_RUNNERS_ENABLED=true
+      # Techo duro de ejecución: sin esto, una ejecución colgada (p.ej. un
+      # nodo Wait que no resume) queda "running" indefinidamente y flow-agent
+      # nunca libera el lock de Redis para que flow-recovery reintente.
+      # 180s da margen de sobra al peor caso real (4 reintentos de 45s al
+      # modelo + esperas = ~189s) sin dejar una ejecución colgar por horas.
+      - EXECUTIONS_TIMEOUT=180
+      - EXECUTIONS_TIMEOUT_MAX=300
       # Los nodos Code de los flujos no usan librerías externas, pero dejamos
       # habilitados los builtin de Node por si un fragment los necesita.
       - NODE_FUNCTION_ALLOW_BUILTIN=crypto

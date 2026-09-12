@@ -151,6 +151,19 @@ export function validateToolCall(spec, toolName, args) {
   const errores = [];
   const required = new Set(schema.required ?? []);
 
+  // El modelo a veces antepone "+" a un teléfono E.164 (así se escribe en
+  // texto normal). clients.phone se guarda sin "+" (ver database/schema.sql:
+  // "Formato E.164 sin + (ej: 5491122334455)"), y ese es el formato que
+  // exige el "format: e164" de tools.json. En vez de rechazar algo que el
+  // modelo va a repetir igual, lo normalizamos acá antes de validar y de
+  // que el valor viaje a la query SQL — mutamos `args` en el lugar para que
+  // el llamador (Ejecutar herramienta) use el valor ya limpio.
+  for (const [prop, propSchema] of Object.entries(schema.properties)) {
+    if (propSchema.format === 'e164' && typeof args[prop] === 'string' && args[prop].startsWith('+')) {
+      args[prop] = args[prop].slice(1);
+    }
+  }
+
   // Propiedades no permitidas
   if (schema.additionalProperties === false) {
     for (const key of Object.keys(args)) {
